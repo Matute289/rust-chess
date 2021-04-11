@@ -1,10 +1,12 @@
 mod pieces;
 mod board;
+mod ui;
 
 use bevy::prelude::*;
 use bevy_mod_picking::*;
 use crate::pieces::{PiecesPlugin};
 use crate::board::*;
+use crate::ui::UIPlugin;
 
 fn main() {
     App::build()
@@ -19,6 +21,7 @@ fn main() {
         .add_plugin(PickingPlugin)
         .add_plugin(BoardPlugin)
         .add_plugin(PiecesPlugin)
+        .add_plugin(UIPlugin)
         .add_startup_system(setup.system())
         .run();
 }
