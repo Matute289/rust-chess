@@ -13,6 +13,7 @@ bevy_mod_picking = { version = "0.20", default-features = false, features = ["ba
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [profile.dev]
 opt-level = 1
