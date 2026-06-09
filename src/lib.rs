@@ -1,3 +1,4 @@
+mod ai;
 mod board;
 mod pieces;
 mod ui;
@@ -5,6 +6,7 @@ mod ui;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
+use ai::AIPlugin;
 use board::BoardPlugin;
 use pieces::PiecesPlugin;
 use ui::UIPlugin;
@@ -37,7 +39,7 @@ pub fn run_app() {
             }),
         )
         .add_plugins(DefaultPickingPlugins)
-        .add_plugins((BoardPlugin, PiecesPlugin, UIPlugin))
+        .add_plugins((BoardPlugin, PiecesPlugin, UIPlugin, AIPlugin))
         .add_systems(Startup, setup)
         .run();
 }
