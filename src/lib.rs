@@ -1,5 +1,6 @@
 mod ai;
 mod board;
+pub mod captured;
 mod home;
 mod pieces;
 pub mod state;
