@@ -227,15 +227,6 @@ fn generate_magic_tables(is_rook: bool) -> Box<[MagicEntry; 64]> {
         .unwrap_or_else(|_| panic!("expected 64 magic entries"))
 }
 
-fn stub_magic_tables() -> Box<[MagicEntry; 64]> {
-    let boxed: Box<[MagicEntry; 64]> = (0..64usize)
-        .map(|_| MagicEntry { mask: Bitboard::EMPTY, magic: 0, shift: 0, attacks: vec![] })
-        .collect::<Vec<_>>()
-        .into_boxed_slice()
-        .try_into()
-        .unwrap_or_else(|_| panic!("expected 64"));
-    boxed
-}
 
 #[cfg(test)]
 mod tests {
