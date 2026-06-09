@@ -1,4 +1,5 @@
 mod bitboard;
+pub mod eval;
 mod moves;
 mod movegen;
 mod position;
