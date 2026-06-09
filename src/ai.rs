@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::board::{CastlingState, PlayerTurn, Taken};
+use crate::board::{CastlingState, GameStatus, GameStatusEvent, PlayerTurn, Taken};
 use crate::pieces::{Piece, PieceColor, PieceType};
 use crate::state::{AppState, GameConfig, GameMode};
 use chess_engine::{
@@ -133,6 +133,7 @@ fn ai_apply_move(
     mut turn_mut: ResMut<PlayerTurn>,
     mut castling_state: ResMut<CastlingState>,
     mut pieces_query: Query<(Entity, &mut Piece)>,
+    mut status_ev: EventWriter<GameStatusEvent>,
 ) {
     // Only apply on the frame AFTER the trigger (turn is no longer "just changed")
     if turn_mut.is_changed() { return; }
@@ -247,6 +248,23 @@ fn ai_apply_move(
     }
 
     turn_mut.change();
+
+    // Check/checkmate/stalemate detection after AI move
+    let all_pieces: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
+    let fen = build_fen(&all_pieces, turn_mut.0, &castling_state);
+    if let Ok(pos) = Position::from_fen(&fen) {
+        if pos.is_checkmate() {
+            let winner = match turn_mut.0 {
+                PieceColor::White => PieceColor::Black,
+                PieceColor::Black => PieceColor::White,
+            };
+            status_ev.send(GameStatusEvent(GameStatus::Checkmate { winner }));
+        } else if pos.is_stalemate() {
+            status_ev.send(GameStatusEvent(GameStatus::Stalemate));
+        } else if pos.is_in_check() {
+            status_ev.send(GameStatusEvent(GameStatus::Check));
+        }
+    }
 }
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────

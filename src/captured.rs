@@ -35,9 +35,10 @@ impl CapturedPieces {
     }
 
     pub fn available_for_promotion(&self, promoting_color: PieceColor) -> &[PieceType] {
+        // The promoting player can restore pieces of the OPPONENT's color that they captured
         match promoting_color {
-            PieceColor::White => &self.white_captured,
-            PieceColor::Black => &self.black_captured,
+            PieceColor::White => &self.black_captured,  // White captured Black's pieces
+            PieceColor::Black => &self.white_captured,  // Black captured White's pieces
         }
     }
 }
@@ -280,12 +281,16 @@ pub fn handle_promotion_choice(
 
         let pawn_entity = match promotion.pawn_entity { Some(e) => e, None => continue };
         let color       = match promotion.color       { Some(c) => c, None => continue };
+        let opponent_color = match color {
+            PieceColor::White => PieceColor::Black,
+            PieceColor::Black => PieceColor::White,
+        };
 
         // Apply promotion
         if let Ok((_, mut piece)) = pieces_q.get_mut(pawn_entity) {
             piece.piece_type = btn.0;
         }
-        captured.remove_first(color, btn.0);
+        captured.remove_first(opponent_color, btn.0);
 
         // Clear promotion state and despawn overlay
         *promotion = PromotionPending::default();
@@ -355,10 +360,11 @@ mod tests {
     }
 
     #[test]
-    fn available_for_promotion_returns_own_color() {
+    fn available_for_promotion_returns_opponent_captured() {
         let mut c = CapturedPieces::default();
-        c.add(&w_piece(PieceType::Rook)); // White piece captured → in white_captured
-        // White promoting player gets back White pieces
+        // Add a Black piece captured by White → goes into black_captured
+        c.add(&Piece { color: PieceColor::Black, piece_type: PieceType::Rook, x: 0, y: 0 });
+        // White promoting player gets pieces from black_captured (pieces White captured from Black)
         assert_eq!(c.available_for_promotion(PieceColor::White), &[PieceType::Rook]);
         assert!(c.available_for_promotion(PieceColor::Black).is_empty());
     }

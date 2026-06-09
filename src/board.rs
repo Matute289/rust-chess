@@ -417,12 +417,12 @@ impl Plugin for BoardPlugin {
                 Update,
                 (
                     select_square,
-                    color_squares,
                     select_piece,
                     move_piece,
                     despawn_taken_pieces,
                     reset_selected,
-                ).run_if(in_state(AppState::Playing)),
+                    color_squares,
+                ).chain().run_if(in_state(AppState::Playing)),
             );
     }
 }
