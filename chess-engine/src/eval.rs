@@ -195,7 +195,12 @@ fn pawn_structure_score(pos: &Position, us: Color) -> i32 {
         let same_and_adj = Bitboard(FILE_MASKS[file]) | adj_files;
         let front_mask = if us == Color::White {
             // All squares on ranks above our rank
-            Bitboard(same_and_adj.0 & !((1u64 << ((rank + 1) * 8)) - 1))
+            // Guard against rank=7 (would cause 1u64 << 64 panic in debug mode)
+            if rank >= 7 {
+                Bitboard::EMPTY
+            } else {
+                Bitboard(same_and_adj.0 & !((1u64 << ((rank + 1) * 8)) - 1))
+            }
         } else {
             // All squares on ranks below our rank (rank 0..rank-1)
             if rank == 0 { Bitboard::EMPTY } else {
@@ -268,6 +273,7 @@ fn king_safety_score(pos: &Position, us: Color, phase: i32) -> i32 {
 
 fn center_control_score(pos: &Position, us: Color) -> i32 {
     use crate::movegen::MoveGen;
+    // Evaluates both sides — call once from evaluate(), do not call twice
     // Central squares: d4=27, e4=28, d5=35, e5=36
     const CENTER: [Square; 4] = [Square(27), Square(28), Square(35), Square(36)];
     let mut score = 0i32;
