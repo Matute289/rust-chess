@@ -1,6 +1,8 @@
 mod ai;
 mod board;
+mod home;
 mod pieces;
+pub mod state;
 mod ui;
 
 use bevy::asset::AssetMetaCheck;
@@ -8,7 +10,9 @@ use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
 use ai::AIPlugin;
 use board::BoardPlugin;
+use home::HomePlugin;
 use pieces::PiecesPlugin;
+use state::{AppState, GameConfig};
 use ui::UIPlugin;
 
 #[cfg(target_arch = "wasm32")]
@@ -39,7 +43,9 @@ pub fn run_app() {
             }),
         )
         .add_plugins(DefaultPickingPlugins)
-        .add_plugins((BoardPlugin, PiecesPlugin, UIPlugin, AIPlugin))
+        .init_state::<AppState>()
+        .init_resource::<GameConfig>()
+        .add_plugins((HomePlugin, BoardPlugin, PiecesPlugin, UIPlugin, AIPlugin))
         .add_systems(Startup, setup)
         .run();
 }
