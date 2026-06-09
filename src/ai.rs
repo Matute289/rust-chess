@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use crate::board::{CastlingState, PlayerTurn, Taken};
 use crate::pieces::{Piece, PieceColor, PieceType};
+use crate::state::{AppState, GameConfig, GameMode};
 use chess_engine::{
     DifficultyConfig, MoveFlag, Position, Search, SearchResult,
 };
@@ -90,13 +91,23 @@ pub fn build_fen(pieces: &[Piece], side_to_move: PieceColor, castling: &Castling
 
 // ─── Systems ─────────────────────────────────────────────────────────────────
 
+fn sync_difficulty_from_config(config: Res<GameConfig>, mut difficulty: ResMut<Difficulty>) {
+    *difficulty = config.difficulty;
+}
+
+fn reset_ai_state(mut pending: ResMut<AiMovePending>) {
+    *pending = AiMovePending::default();
+}
+
 fn ai_turn_trigger(
     turn: Res<PlayerTurn>,
     castling_state: Res<CastlingState>,
     difficulty: Res<Difficulty>,
     pieces_query: Query<&Piece>,
     mut pending_mut: ResMut<AiMovePending>,
+    game_config: Res<GameConfig>,
 ) {
+    if game_config.mode == GameMode::PvP { return; }
     if !turn.is_changed() { return; }
     if turn.0 != PieceColor::Black { return; }
     if pending_mut.0.is_some() { return; }
@@ -247,7 +258,10 @@ impl Plugin for AIPlugin {
         app
             .init_resource::<AiMovePending>()
             .init_resource::<Difficulty>()
-            .add_systems(Update, (ai_turn_trigger, ai_apply_move).chain());
+            .add_systems(OnEnter(AppState::Playing), sync_difficulty_from_config)
+            .add_systems(OnEnter(AppState::Playing), reset_ai_state)
+            .add_systems(Update, (ai_turn_trigger, ai_apply_move).chain()
+                .run_if(in_state(AppState::Playing)));
     }
 }
 
