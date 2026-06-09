@@ -367,6 +367,24 @@ impl Position {
         crate::movegen::MoveGen::legal(self)
     }
 
+    pub fn perft(&self, depth: u8) -> u64 {
+        if depth == 0 { return 1; }
+        let moves = self.legal_moves();
+        if depth == 1 { return moves.len() as u64; }
+        let mut nodes = 0u64;
+        for m in moves {
+            nodes += self.make_move(m).perft(depth - 1);
+        }
+        nodes
+    }
+
+    pub fn perft_divide(&self, depth: u8) -> Vec<(String, u64)> {
+        self.legal_moves()
+            .into_iter()
+            .map(|m| (m.to_uci(), self.make_move(m).perft(depth - 1)))
+            .collect()
+    }
+
     pub fn is_in_check(&self) -> bool {
         crate::movegen::MoveGen::is_attacked(self, self.king_sq(self.side_to_move), self.side_to_move.flip())
     }
@@ -551,6 +569,21 @@ mod tests {
         let saved = pos.make_move_mut(m);
         pos.unmake_move_mut(m, saved);
         assert_eq!(pos.hash, orig_hash);
+    }
+
+    #[test]
+    fn perft_startpos_d1() {
+        assert_eq!(startpos().perft(1), 20);
+    }
+
+    #[test]
+    fn perft_startpos_d2() {
+        assert_eq!(startpos().perft(2), 400);
+    }
+
+    #[test]
+    fn perft_startpos_d3() {
+        assert_eq!(startpos().perft(3), 8_902);
     }
 
     #[test]
