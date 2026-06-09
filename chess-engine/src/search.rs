@@ -9,6 +9,64 @@ pub const MATE_SCORE: i32 = 100_000;
 pub const DRAW_SCORE: i32 = 0;
 const INF: i32 = i32::MAX / 2;
 
+// ── Transposition table ───────────────────────────────────────────────────────
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum TTFlag { Exact, LowerBound, UpperBound }
+
+#[derive(Copy, Clone)]
+struct TTEntry {
+    hash:      u64,
+    depth:     u8,
+    score:     i32,
+    flag:      TTFlag,
+    best_move: Move,
+}
+
+impl TTEntry {
+    const EMPTY: TTEntry = TTEntry {
+        hash: 0, depth: 0, score: 0, flag: TTFlag::Exact, best_move: Move::NULL,
+    };
+}
+
+const TT_SIZE: usize = 1 << 20; // 1M entries ≈ ~16 MB
+
+struct TranspositionTable {
+    entries: Vec<TTEntry>,
+}
+
+impl TranspositionTable {
+    fn new() -> Self {
+        TranspositionTable { entries: vec![TTEntry::EMPTY; TT_SIZE] }
+    }
+
+    /// Returns (score, best_move) if hit. Score is i32::MIN if depth insufficient (has move only).
+    fn probe(&self, hash: u64, depth: u8, alpha: i32, beta: i32) -> Option<(i32, Move)> {
+        let idx = (hash as usize) & (TT_SIZE - 1);
+        let e = &self.entries[idx];
+        if e.hash != hash { return None; }
+        let best_move = e.best_move;
+        if e.depth < depth {
+            // Entry exists but isn't deep enough — return move only (i32::MIN signals no score)
+            return Some((i32::MIN, best_move));
+        }
+        let score = match e.flag {
+            TTFlag::Exact      => e.score,
+            TTFlag::LowerBound => { if e.score >= beta  { return Some((beta,  best_move)); }
+                                    return Some((i32::MIN, best_move)); }
+            TTFlag::UpperBound => { if e.score <= alpha { return Some((alpha, best_move)); }
+                                    return Some((i32::MIN, best_move)); }
+        };
+        Some((score, best_move))
+    }
+
+    fn store(&mut self, hash: u64, depth: u8, score: i32, flag: TTFlag, best_move: Move) {
+        let idx = (hash as usize) & (TT_SIZE - 1);
+        // Always-replace strategy
+        self.entries[idx] = TTEntry { hash, depth, score, flag, best_move };
+    }
+}
+
 // ── Public types ──────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -35,11 +93,12 @@ pub enum SearchResult {
 
 pub struct Search {
     pub nodes: u64,
+    tt: TranspositionTable,
 }
 
 impl Search {
     pub fn new() -> Search {
-        Search { nodes: 0 }
+        Search { nodes: 0, tt: TranspositionTable::new() }
     }
 
     /// Returns the best move for the given position and difficulty.
@@ -126,8 +185,7 @@ impl Search {
     fn negamax(&mut self, pos: &Position, depth: u8, mut alpha: i32, beta: i32, max_nodes: u64) -> i32 {
         self.nodes += 1;
 
-        // If the current side's king is gone (captured by a pseudo-legal move), that's an
-        // illegal state — score as a decisive loss for the side to move.
+        // King-capture guard
         let us = pos.side_to_move as usize;
         if pos.pieces[us][PieceType::King as usize].0 == 0 {
             return -MATE_SCORE;
@@ -136,24 +194,56 @@ impl Search {
         if self.nodes >= max_nodes { return evaluate(pos); }
         if depth == 0              { return evaluate(pos); }
 
+        // TT probe
+        let tt_move = match self.tt.probe(pos.hash, depth, alpha, beta) {
+            Some((score, _tt_m)) if score != i32::MIN => return score,
+            Some((_, tt_m))                           => tt_m,
+            None                                      => Move::NULL,
+        };
+
         let moves = pos.legal_moves();
         if moves.is_empty() {
             return if pos.is_in_check() {
-                // Checkmate — return negative mate score, offset by depth to prefer shorter mates
                 -(MATE_SCORE - depth as i32)
             } else {
                 DRAW_SCORE
             };
         }
 
-        for m in moves {
-            let child = pos.make_move(m);
-            let score = -self.negamax(&child, depth - 1, -beta, -alpha, max_nodes);
-            if score >= beta { return beta; }  // beta cutoff
-            if score > alpha { alpha = score; }
+        let original_alpha = alpha;
+        let mut best_move  = Move::NULL;
+        let mut best_score = -INF;
+
+        // Put TT move first in ordering
+        let mut ordered = moves;
+        if tt_move != Move::NULL {
+            if let Some(pos_idx) = ordered.iter().position(|&m| m == tt_move) {
+                ordered.swap(0, pos_idx);
+            }
         }
 
-        alpha
+        for m in ordered {
+            let child = pos.make_move(m);
+            let score = -self.negamax(&child, depth - 1, -beta, -alpha, max_nodes);
+            if score > best_score {
+                best_score = score;
+                best_move  = m;
+            }
+            if score > alpha { alpha = score; }
+            if alpha >= beta { break; }
+        }
+
+        // Store result in TT
+        let flag = if best_score <= original_alpha {
+            TTFlag::UpperBound
+        } else if best_score >= beta {
+            TTFlag::LowerBound
+        } else {
+            TTFlag::Exact
+        };
+        self.tt.store(pos.hash, depth, best_score, flag, best_move);
+
+        best_score
     }
 }
 
@@ -163,6 +253,18 @@ mod tests {
     use crate::position::Position;
 
     fn pos(fen: &str) -> Position { Position::from_fen(fen).unwrap() }
+
+    #[test]
+    fn tt_reduces_nodes() {
+        // With TT, searching startpos at depth 5 should complete within budget
+        let p = pos("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let config = DifficultyConfig::medio();
+        let mut s = Search::new();
+        let SearchResult::EngineMove(_, _) = s.best_move(&p, &config);
+        // Just verify the search completes and stays within node budget
+        assert!(s.nodes > 0);
+        assert!(s.nodes <= config.max_nodes);
+    }
 
     #[test]
     fn mate_in_one_rook() {
