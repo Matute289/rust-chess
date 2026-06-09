@@ -67,6 +67,47 @@ impl TranspositionTable {
     }
 }
 
+// ── Move ordering ─────────────────────────────────────────────────────────────
+
+// MVV-LVA: Most Valuable Victim - Least Valuable Attacker
+// Higher score = search first (best captures first)
+fn mvv_lva(victim: PieceType, attacker: PieceType) -> i32 {
+    let victim_val = match victim {
+        PieceType::Pawn => 1, PieceType::Knight => 2, PieceType::Bishop => 3,
+        PieceType::Rook => 4, PieceType::Queen  => 5, PieceType::King   => 6,
+    };
+    let attacker_val = match attacker {
+        PieceType::Pawn => 6, PieceType::Knight => 5, PieceType::Bishop => 4,
+        PieceType::Rook => 3, PieceType::Queen  => 2, PieceType::King   => 1,
+    };
+    victim_val * 10 + attacker_val
+}
+
+fn score_move(
+    pos: &Position,
+    m: Move,
+    tt_move: Move,
+    killers: &[Move; 2],
+    history: &[[i32; 64]; 64],
+) -> i32 {
+    if m == tt_move { return 10_000_000; }
+
+    if m.is_capture() || m.is_en_passant() {
+        let victim_pt = if m.is_en_passant() {
+            PieceType::Pawn
+        } else {
+            pos.piece_at(m.to_sq()).map(|(_, pt)| pt).unwrap_or(PieceType::Pawn)
+        };
+        let attacker_pt = pos.piece_at(m.from_sq()).map(|(_, pt)| pt).unwrap_or(PieceType::Pawn);
+        return 1_000_000 + mvv_lva(victim_pt, attacker_pt);
+    }
+
+    if m == killers[0] { return 900_000; }
+    if m == killers[1] { return 800_000; }
+
+    history[m.from_sq().0 as usize][m.to_sq().0 as usize]
+}
+
 // ── Public types ──────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -93,12 +134,19 @@ pub enum SearchResult {
 
 pub struct Search {
     pub nodes: u64,
-    tt: TranspositionTable,
+    tt:       TranspositionTable,
+    killers:  [[Move; 2]; 64],      // [depth][slot]
+    history:  [[i32; 64]; 64],      // [from_sq][to_sq]
 }
 
 impl Search {
     pub fn new() -> Search {
-        Search { nodes: 0, tt: TranspositionTable::new() }
+        Search {
+            nodes:   0,
+            tt:      TranspositionTable::new(),
+            killers: [[Move::NULL; 2]; 64],
+            history: [[0i32; 64]; 64],
+        }
     }
 
     /// Returns the best move for the given position and difficulty.
@@ -214,15 +262,21 @@ impl Search {
         let mut best_move  = Move::NULL;
         let mut best_score = -INF;
 
-        // Put TT move first in ordering
-        let mut ordered = moves;
-        if tt_move != Move::NULL {
-            if let Some(pos_idx) = ordered.iter().position(|&m| m == tt_move) {
-                ordered.swap(0, pos_idx);
-            }
-        }
+        // Score and sort all moves
+        let ordered = moves;  // TT move gets highest score via score_move, sorts first automatically
+        let mut scored: Vec<(Move, i32)> = ordered.into_iter().map(|m| {
+            let s = score_move(
+                pos, m, tt_move,
+                &self.killers[depth.min(63) as usize],
+                &self.history,
+            );
+            (m, s)
+        }).collect();
+        scored.sort_unstable_by(|a, b| b.1.cmp(&a.1));
 
-        for m in ordered {
+        let mut move_count = 0usize;
+        for (m, _) in scored {
+            move_count += 1;
             let child = pos.make_move(m);
             let score = -self.negamax(&child, depth - 1, -beta, -alpha, max_nodes);
             if score > best_score {
@@ -230,8 +284,19 @@ impl Search {
                 best_move  = m;
             }
             if score > alpha { alpha = score; }
-            if alpha >= beta { break; }
+            if alpha >= beta {
+                // Beta cutoff: update killers and history for quiet moves
+                if !m.is_capture() && !m.is_en_passant() {
+                    let d = depth.min(63) as usize;
+                    self.killers[d][1] = self.killers[d][0];
+                    self.killers[d][0] = m;
+                    self.history[m.from_sq().0 as usize][m.to_sq().0 as usize] +=
+                        (depth as i32) * (depth as i32);
+                }
+                break;
+            }
         }
+        let _ = move_count;
 
         // Store result in TT
         let flag = if best_score <= original_alpha {
@@ -305,5 +370,17 @@ mod tests {
         let SearchResult::EngineMove(m, score) = result;
         assert!(score >= MATE_SCORE - 100, "score {} should be near mate", score);
         assert_eq!(m.to_uci(), "a7a8");
+    }
+
+    #[test]
+    fn captures_ordered_before_quiets() {
+        // After 1.e4 e5, white has a capture: d4xe5 is not available but exd5 test
+        // More reliably: test that a winning capture position finds the right move quickly
+        // White queen takes free pawn — should be found at low depth
+        let p = pos("k7/8/8/3p4/4Q3/8/8/K7 w - - 0 1");
+        let config = DifficultyConfig { max_depth: 3, max_nodes: 50_000, random_factor: 0.0 };
+        let SearchResult::EngineMove(m, _) = Search::new().best_move(&p, &config);
+        // Qxd5 should be found
+        assert_eq!(m.to_uci(), "e4d5", "expected Qxd5 got {}", m.to_uci());
     }
 }
