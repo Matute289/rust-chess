@@ -363,6 +363,26 @@ impl Position {
         pos
     }
 
+    pub fn legal_moves(&self) -> Vec<crate::moves::Move> {
+        crate::movegen::MoveGen::legal(self)
+    }
+
+    pub fn is_in_check(&self) -> bool {
+        crate::movegen::MoveGen::is_attacked(self, self.king_sq(self.side_to_move), self.side_to_move.flip())
+    }
+
+    pub fn is_checkmate(&self) -> bool {
+        self.is_in_check() && self.legal_moves().is_empty()
+    }
+
+    pub fn is_stalemate(&self) -> bool {
+        !self.is_in_check() && self.legal_moves().is_empty()
+    }
+
+    pub fn is_fifty_move_draw(&self) -> bool {
+        self.halfmove_clock >= 100
+    }
+
     pub fn to_fen(&self) -> String {
         let mut fen = String::new();
 
