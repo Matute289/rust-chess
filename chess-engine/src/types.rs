@@ -24,8 +24,8 @@ impl Square {
     pub fn from_uci(s: &str) -> Option<Square> {
         let bytes = s.as_bytes();
         if bytes.len() < 2 { return None; }
-        let file = bytes[0].checked_sub(b'a')?.min(7);
-        let rank = bytes[1].checked_sub(b'1')?.min(7);
+        let file = bytes[0].checked_sub(b'a').filter(|&f| f < 8)?;
+        let rank = bytes[1].checked_sub(b'1').filter(|&r| r < 8)?;
         Some(Square::from_rank_file(rank, file))
     }
 
