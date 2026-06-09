@@ -5,4 +5,5 @@ mod position;
 mod tables;
 mod types;
 
+pub use bitboard::Bitboard;
 pub use types::{CastlingRights, Color, PieceType, Square};
