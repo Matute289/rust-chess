@@ -198,6 +198,7 @@ fn move_piece(
                     commands.entity(*other_entity).insert(Taken);
                 }
             }
+            let origin_y = piece.y;
             piece.x = square.x;
             piece.y = square.y;
             // Strip castling rights when king or rook moves
@@ -211,12 +212,12 @@ fn move_piece(
                     castling_state.black_queenside = false;
                 }
                 (PieceColor::White, PieceType::Rook) => {
-                    if piece.y == 7 { castling_state.white_kingside  = false; }
-                    if piece.y == 0 { castling_state.white_queenside = false; }
+                    if origin_y == 7 { castling_state.white_kingside  = false; }
+                    if origin_y == 0 { castling_state.white_queenside = false; }
                 }
                 (PieceColor::Black, PieceType::Rook) => {
-                    if piece.y == 7 { castling_state.black_kingside  = false; }
-                    if piece.y == 0 { castling_state.black_queenside = false; }
+                    if origin_y == 7 { castling_state.black_kingside  = false; }
+                    if origin_y == 0 { castling_state.black_queenside = false; }
                 }
                 _ => {}
             }
