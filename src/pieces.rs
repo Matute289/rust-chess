@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
+use crate::state::AppState;
 
 fn spawn_piece(
     commands: &mut Commands,
@@ -234,6 +235,12 @@ fn move_pieces(time: Res<Time>, mut query: Query<(&mut Transform, &Piece)>) {
     }
 }
 
+fn despawn_pieces(mut commands: Commands, query: Query<Entity, With<Piece>>) {
+    for e in &query {
+        commands.entity(e).despawn_recursive();
+    }
+}
+
 fn color_of_square(pos: (u8, u8), pieces: &[Piece]) -> Option<PieceColor> {
     pieces
         .iter()
@@ -283,7 +290,9 @@ pub struct PiecesPlugin;
 
 impl Plugin for PiecesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, create_pieces)
-            .add_systems(Update, move_pieces);
+        app
+            .add_systems(OnEnter(AppState::Playing), create_pieces)
+            .add_systems(OnExit(AppState::Playing), despawn_pieces)
+            .add_systems(Update, move_pieces.run_if(in_state(AppState::Playing)));
     }
 }
