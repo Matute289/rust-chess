@@ -1,9 +1,9 @@
 mod ai;
 mod board;
-pub mod captured;
+mod captured;
 mod home;
 mod pieces;
-pub mod state;
+mod state;
 mod ui;
 
 use bevy::asset::AssetMetaCheck;
@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
 use ai::AIPlugin;
 use board::BoardPlugin;
+use captured::CapturedPlugin;
 use home::HomePlugin;
 use pieces::PiecesPlugin;
 use state::{AppState, GameConfig};
@@ -46,7 +47,7 @@ pub fn run_app() {
         .add_plugins(DefaultPickingPlugins)
         .init_state::<AppState>()
         .init_resource::<GameConfig>()
-        .add_plugins((HomePlugin, BoardPlugin, PiecesPlugin, UIPlugin, AIPlugin))
+        .add_plugins((HomePlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin))
         .add_systems(Startup, setup)
         .run();
 }
