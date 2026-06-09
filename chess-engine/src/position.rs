@@ -385,6 +385,28 @@ impl Position {
             .collect()
     }
 
+    /// Returns a copy of this position with the turn passed to the opponent (no piece moved).
+    /// Used for null-move pruning in search. Clears en-passant square.
+    pub fn null_move(&self) -> Position {
+        let z = zobrist();
+        let mut pos = Position {
+            pieces:          self.pieces,
+            side_to_move:    self.side_to_move.flip(),
+            castling_rights: self.castling_rights,
+            en_passant:      None,
+            halfmove_clock:  self.halfmove_clock,
+            fullmove_number: self.fullmove_number,
+            hash:            self.hash,
+        };
+        // Update hash: flip side-to-move
+        pos.hash ^= z.black_move;
+        // Remove old en-passant from hash if it existed
+        if let Some(ep) = self.en_passant {
+            pos.hash ^= z.en_passant[ep.file() as usize];
+        }
+        pos
+    }
+
     pub fn is_in_check(&self) -> bool {
         crate::movegen::MoveGen::is_attacked(self, self.king_sq(self.side_to_move), self.side_to_move.flip())
     }

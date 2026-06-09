@@ -293,6 +293,18 @@ impl Search {
             None                                      => Move::NULL,
         };
 
+        // Null move pruning: if we can pass the turn and still cause a beta cutoff,
+        // the position is so good we can prune. Disabled when in check or near endgame.
+        const NULL_R: u8 = 2;
+        let is_endgame = pos.piece_count() <= 10;
+        if depth >= NULL_R + 1 && !pos.is_in_check() && !is_endgame {
+            let null_pos = pos.null_move();
+            let null_score = -self.negamax(&null_pos, depth - NULL_R - 1, -beta, -beta + 1, max_nodes);
+            if null_score >= beta {
+                return beta;
+            }
+        }
+
         let moves = pos.legal_moves();
         if moves.is_empty() {
             return if pos.is_in_check() {
@@ -322,7 +334,24 @@ impl Search {
         for (m, _) in scored {
             move_count += 1;
             let child = pos.make_move(m);
-            let score = -self.negamax(&child, depth - 1, -beta, -alpha, max_nodes);
+
+            let score = if move_count > 4
+                && depth >= 3
+                && !m.is_capture()
+                && !m.is_promotion()
+                && !pos.is_in_check()
+            {
+                // Late Move Reduction: search at reduced depth first
+                let reduced = -self.negamax(&child, depth - 2, -alpha - 1, -alpha, max_nodes);
+                if reduced > alpha {
+                    // Re-search at full depth if move looks promising
+                    -self.negamax(&child, depth - 1, -beta, -alpha, max_nodes)
+                } else {
+                    reduced
+                }
+            } else {
+                -self.negamax(&child, depth - 1, -beta, -alpha, max_nodes)
+            };
             if score > best_score {
                 best_score = score;
                 best_move  = m;
@@ -340,8 +369,6 @@ impl Search {
                 break;
             }
         }
-        let _ = move_count;
-
         // Store result in TT
         let flag = if best_score <= original_alpha {
             TTFlag::UpperBound
@@ -429,6 +456,17 @@ mod tests {
         let SearchResult::EngineMove(m, _) = Search::new().best_move(&p, &config);
         // Black should play Qxe4 (d5e4)
         assert_eq!(m.to_uci(), "d5e4", "expected Qxe4 got {}", m.to_uci());
+    }
+
+    #[test]
+    fn null_move_does_not_break_mate_detection() {
+        // Null move pruning must be disabled when in check
+        // Verify the engine still finds mate in a position where null move could cause issues
+        let p = pos("k7/R7/1K6/8/8/8/8/8 w - - 0 1");
+        let config = DifficultyConfig { max_depth: 5, max_nodes: 500_000, random_factor: 0.0 };
+        let SearchResult::EngineMove(m, score) = Search::new().best_move(&p, &config);
+        assert!(score >= MATE_SCORE - 100, "score {} should be near mate", score);
+        assert_eq!(m.to_uci(), "a7a8");
     }
 
     #[test]
