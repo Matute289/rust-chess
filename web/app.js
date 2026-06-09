@@ -1,7 +1,6 @@
 import init from './pkg/bevy_chess.js';
 
 const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-let isLandscape = window.innerWidth > window.innerHeight;
 let isPaused = false;
 
 function fitCanvas() {
@@ -12,16 +11,6 @@ function fitCanvas() {
   let factor = Math.min(scaleX, scaleY);
   if (!isTouchDevice) factor = Math.min(factor, 1.0); // desktop: don't upscale
   canvas.style.transform = `translate(-50%, -50%) scale(${factor})`;
-}
-
-function updatePortraitHint() {
-  const nowLandscape = window.innerWidth > window.innerHeight;
-  const hint = document.getElementById('portrait-hint');
-  if (isTouchDevice && !nowLandscape) {
-    hint.style.display = 'flex';
-  } else {
-    hint.style.display = 'none';
-  }
 }
 
 window.togglePause = function () {
@@ -57,9 +46,7 @@ document.addEventListener('keydown', (e) => {
 }, true); // capture phase — fires before canvas receives the event
 
 window.addEventListener('resize', () => {
-  isLandscape = window.innerWidth > window.innerHeight;
   fitCanvas();
-  updatePortraitHint();
 });
 
 // Boot
@@ -71,4 +58,3 @@ try {
 }
 document.getElementById('loading-overlay').style.display = 'none';
 fitCanvas();
-updatePortraitHint();
