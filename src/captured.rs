@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use crate::pieces::{Piece, PieceColor, PieceType};
 use crate::state::AppState;
+use crate::board::{CastlingState, GameStatus, GameStatusEvent, PlayerTurn};
+use crate::ai::build_fen;
+use chess_engine::Position;
 
 // ─── Resources ───────────────────────────────────────────────────────────────
 
@@ -262,12 +265,15 @@ fn spawn_promo_btn(parent: &mut ChildBuilder, font: Handle<Font>, pt: PieceType)
 }
 
 pub fn handle_promotion_choice(
-    q:            Query<(&Interaction, &PromotionBtn), Changed<Interaction>>,
-    mut commands: Commands,
+    q:             Query<(&Interaction, &PromotionBtn), Changed<Interaction>>,
+    mut commands:  Commands,
     mut promotion: ResMut<PromotionPending>,
     mut captured:  ResMut<CapturedPieces>,
-    mut pieces_q:  Query<&mut Piece>,
+    mut pieces_q:  Query<(Entity, &mut Piece)>,
     overlay_q:     Query<Entity, With<PromotionOverlayRoot>>,
+    mut turn:      ResMut<PlayerTurn>,
+    castling:      Res<CastlingState>,
+    mut status_ev: EventWriter<GameStatusEvent>,
 ) {
     for (interaction, btn) in &q {
         if *interaction != Interaction::Pressed { continue; }
@@ -275,13 +281,36 @@ pub fn handle_promotion_choice(
         let pawn_entity = match promotion.pawn_entity { Some(e) => e, None => continue };
         let color       = match promotion.color       { Some(c) => c, None => continue };
 
-        if let Ok(mut piece) = pieces_q.get_mut(pawn_entity) {
+        // Apply promotion
+        if let Ok((_, mut piece)) = pieces_q.get_mut(pawn_entity) {
             piece.piece_type = btn.0;
         }
         captured.remove_first(color, btn.0);
 
+        // Clear promotion state and despawn overlay
         *promotion = PromotionPending::default();
         for e in &overlay_q { commands.entity(e).despawn_recursive(); }
+
+        // Advance turn
+        turn.change();
+
+        // Snapshot current board state for check detection
+        let all: Vec<crate::pieces::Piece> = pieces_q.iter().map(|(_, p)| *p).collect();
+        let fen = build_fen(&all, turn.0, &castling);
+        if let Ok(pos) = Position::from_fen(&fen) {
+            if pos.is_checkmate() {
+                let winner = match turn.0 {
+                    crate::pieces::PieceColor::White => crate::pieces::PieceColor::Black,
+                    crate::pieces::PieceColor::Black => crate::pieces::PieceColor::White,
+                };
+                status_ev.send(GameStatusEvent(GameStatus::Checkmate { winner }));
+            } else if pos.is_stalemate() {
+                status_ev.send(GameStatusEvent(GameStatus::Stalemate));
+            } else if pos.is_in_check() {
+                status_ev.send(GameStatusEvent(GameStatus::Check));
+            }
+        }
+
         return;
     }
 }
