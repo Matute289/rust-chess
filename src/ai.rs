@@ -2,8 +2,7 @@ use bevy::prelude::*;
 use crate::board::{CastlingState, PlayerTurn};
 use crate::pieces::{Piece, PieceColor, PieceType};
 use chess_engine::{
-    Color as EngineColor, DifficultyConfig, MoveFlag, Position,
-    PieceType as EnginePieceType, Search, SearchResult,
+    DifficultyConfig, MoveFlag, Position, Search, SearchResult,
 };
 
 // ─── Resources ───────────────────────────────────────────────────────────────
@@ -148,6 +147,7 @@ fn ai_apply_move(
     turn: Res<PlayerTurn>,
     mut pending: ResMut<AiMovePending>,
     mut turn_mut: ResMut<PlayerTurn>,
+    mut castling_state: ResMut<CastlingState>,
     mut pieces_query: Query<(Entity, &mut Piece)>,
 ) {
     // Only apply on the frame AFTER the trigger (turn is no longer "just changed")
@@ -232,6 +232,20 @@ fn ai_apply_move(
     if let Ok((_, mut piece)) = pieces_query.get_mut(moving_entity) {
         piece.x = to_bevy.0;
         piece.y = to_bevy.1;
+
+        // Strip castling rights for Black when king or rook moves
+        match piece.piece_type {
+            PieceType::King => {
+                castling_state.black_kingside  = false;
+                castling_state.black_queenside = false;
+            }
+            PieceType::Rook => {
+                let origin_x = from_bevy.0;
+                if origin_x == 7 { castling_state.black_kingside  = false; }
+                if origin_x == 0 { castling_state.black_queenside = false; }
+            }
+            _ => {}
+        }
 
         let is_promo = matches!(flag,
             MoveFlag::PromoKnight | MoveFlag::PromoBishop | MoveFlag::PromoRook | MoveFlag::PromoQueen |
