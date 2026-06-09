@@ -240,9 +240,9 @@ fn ai_apply_move(
                 castling_state.black_queenside = false;
             }
             PieceType::Rook => {
-                let origin_x = from_bevy.0;
-                if origin_x == 7 { castling_state.black_kingside  = false; }
-                if origin_x == 0 { castling_state.black_queenside = false; }
+                let origin_file = from_bevy.1;
+                if origin_file == 7 { castling_state.black_kingside  = false; }
+                if origin_file == 0 { castling_state.black_queenside = false; }
             }
             _ => {}
         }
