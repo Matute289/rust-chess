@@ -90,17 +90,42 @@ fn color_squares(
 
 fn select_square(
     mut click_events: EventReader<Pointer<Click>>,
-    squares_query: Query<&Square>,
+    squares_query: Query<(Entity, &Square)>,
+    pieces_query: Query<&Piece>,
+    parent_query: Query<&Parent>,
     mut selected_square: ResMut<SelectedSquare>,
     mut selected_piece: ResMut<SelectedPiece>,
 ) {
     for event in click_events.read() {
-        if squares_query.get(event.target).is_ok() {
-            selected_square.entity = Some(event.target);
-        } else {
-            selected_square.entity = None;
-            selected_piece.entity = None;
+        let target = event.target;
+
+        // Direct square click
+        if squares_query.get(target).is_ok() {
+            selected_square.entity = Some(target);
+            continue;
         }
+
+        // Direct piece entity click
+        let piece_opt = pieces_query.get(target).ok().or_else(|| {
+            // Child mesh click — walk up one level to find the Piece parent
+            parent_query
+                .get(target)
+                .ok()
+                .and_then(|p| pieces_query.get(p.get()).ok())
+        });
+
+        if let Some(piece) = piece_opt {
+            if let Some((sq_entity, _)) = squares_query
+                .iter()
+                .find(|(_, sq)| sq.x == piece.x && sq.y == piece.y)
+            {
+                selected_square.entity = Some(sq_entity);
+            }
+            continue;
+        }
+
+        selected_square.entity = None;
+        selected_piece.entity = None;
     }
 }
 

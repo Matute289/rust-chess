@@ -1,37 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
-    <meta charset="utf-8">
-    <title>Ajedrez</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            background: #1a1a2e;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            font-family: sans-serif;
-            color: #eee;
-        }
-        canvas {
-            display: block;
-            max-width: 100vw;
-            max-height: 100vh;
-        }
-        #loading {
-            font-size: 1.2rem;
-            margin: 1rem;
-        }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Ajedrez</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="loading">Cargando Ajedrez...</div>
-    <script type="module">
-        import init from './pkg/bevy_chess.js';
-        await init();
-        document.getElementById('loading').remove();
-    </script>
+  <canvas id="canvas"></canvas>
+
+  <!-- Game controls — always on top, outside Bevy canvas focus -->
+  <div id="game-controls">
+    <button class="game-btn" id="btn-pause" onclick="togglePause()">⏸ Pausa</button>
+    <button class="game-btn" id="btn-exit" onclick="exitGame()">✕ Nueva partida</button>
+  </div>
+
+  <!-- Loading overlay — shown until Bevy renders first frame -->
+  <div id="loading-overlay">
+    <div class="loading-box">
+      <div class="loading-title">♟ AJEDREZ</div>
+      <div class="loading-hint">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- Pause overlay -->
+  <div id="pause-overlay">
+    <div class="pause-box">
+      <div class="pause-title">⏸ PAUSA</div>
+      <button class="pause-resume-btn" onclick="togglePause()">▶ Reanudar</button>
+    </div>
+  </div>
+
+  <!-- Portrait hint — shown when phone is in portrait mode -->
+  <div id="portrait-hint">
+    <div class="portrait-box">
+      <div class="portrait-icon">🔄</div>
+      <div class="portrait-text">Rotá el dispositivo<br>para jugar</div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>

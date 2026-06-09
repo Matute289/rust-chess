@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_mod_picking::prelude::*;
 
 fn spawn_piece(
     commands: &mut Commands,
@@ -29,16 +30,19 @@ fn spawn_piece(
         ))
         .with_children(|parent| {
             for (mesh, offset) in meshes.into_iter().zip(offsets.into_iter()) {
-                parent.spawn(PbrBundle {
-                    mesh,
-                    material: material.clone(),
-                    transform: Transform {
-                        translation: offset,
-                        scale,
+                parent.spawn((
+                    PbrBundle {
+                        mesh,
+                        material: material.clone(),
+                        transform: Transform {
+                            translation: offset,
+                            scale,
+                            ..default()
+                        },
                         ..default()
                     },
-                    ..default()
-                });
+                    PickableBundle::default(),
+                ));
             }
         });
 }

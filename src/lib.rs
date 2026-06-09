@@ -2,6 +2,7 @@ mod board;
 mod pieces;
 mod ui;
 
+use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
 use board::BoardPlugin;
@@ -20,12 +21,18 @@ pub fn wasm_main() {
 pub fn run_app() {
     App::new()
         .add_plugins(
-            DefaultPlugins.set(WindowPlugin {
+            DefaultPlugins
+            .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "Ajedrez".to_string(),
                     resolution: (1200., 1000.).into(),
+                    canvas: Some("#canvas".to_string()),
                     ..default()
                 }),
+                ..default()
+            })
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
                 ..default()
             }),
         )
