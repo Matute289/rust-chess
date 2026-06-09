@@ -230,6 +230,50 @@ impl Search {
         candidates[idx]
     }
 
+    fn quiescence(&mut self, pos: &Position, mut alpha: i32, beta: i32, max_nodes: u64) -> i32 {
+        self.nodes += 1;
+
+        // King-capture guard
+        let us = pos.side_to_move as usize;
+        if pos.pieces[us][PieceType::King as usize].0 == 0 {
+            return -MATE_SCORE;
+        }
+
+        if self.nodes >= max_nodes { return evaluate(pos); }
+
+        // Stand-pat: static eval as lower bound
+        let stand_pat = evaluate(pos);
+        if stand_pat >= beta  { return beta; }
+        if stand_pat > alpha  { alpha = stand_pat; }
+
+        // Generate only captures and en-passant
+        let captures: Vec<Move> = pos.legal_moves()
+            .into_iter()
+            .filter(|m| m.is_capture() || m.is_en_passant())
+            .collect();
+
+        // Order captures by MVV-LVA
+        let mut scored: Vec<(Move, i32)> = captures.into_iter().map(|m| {
+            let victim_pt = if m.is_en_passant() {
+                PieceType::Pawn
+            } else {
+                pos.piece_at(m.to_sq()).map(|(_, pt)| pt).unwrap_or(PieceType::Pawn)
+            };
+            let attacker_pt = pos.piece_at(m.from_sq()).map(|(_, pt)| pt).unwrap_or(PieceType::Pawn);
+            (m, mvv_lva(victim_pt, attacker_pt))
+        }).collect();
+        scored.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+
+        for (m, _) in scored {
+            let child = pos.make_move(m);
+            let score = -self.quiescence(&child, -beta, -alpha, max_nodes);
+            if score >= beta  { return beta; }
+            if score > alpha  { alpha = score; }
+        }
+
+        alpha
+    }
+
     fn negamax(&mut self, pos: &Position, depth: u8, mut alpha: i32, beta: i32, max_nodes: u64) -> i32 {
         self.nodes += 1;
 
@@ -240,7 +284,7 @@ impl Search {
         }
 
         if self.nodes >= max_nodes { return evaluate(pos); }
-        if depth == 0              { return evaluate(pos); }
+        if depth == 0              { return self.quiescence(pos, alpha, beta, max_nodes); }
 
         // TT probe
         let tt_move = match self.tt.probe(pos.hash, depth, alpha, beta) {
@@ -370,6 +414,21 @@ mod tests {
         let SearchResult::EngineMove(m, score) = result;
         assert!(score >= MATE_SCORE - 100, "score {} should be near mate", score);
         assert_eq!(m.to_uci(), "a7a8");
+    }
+
+    #[test]
+    fn quiescence_avoids_horizon_effect() {
+        // Black queen can capture a hanging white queen on e4, then white recaptures with pawn
+        // Without quiescence, depth-0 might see black up a queen; with quiescence it should
+        // see the recapture and find the position roughly equal
+        // Position: white queen on e4 hanging, black queen on d5 can take it,
+        // white pawn on f3 can recapture on e4
+        // Black to move: Qxe4 fxe4 — net result is pawn trade, not queen win
+        let p = pos("k7/8/8/3q4/4Q3/5P2/8/K7 b - - 0 1");
+        let config = DifficultyConfig { max_depth: 2, max_nodes: 500_000, random_factor: 0.0 };
+        let SearchResult::EngineMove(m, _) = Search::new().best_move(&p, &config);
+        // Black should play Qxe4 (d5e4)
+        assert_eq!(m.to_uci(), "d5e4", "expected Qxe4 got {}", m.to_uci());
     }
 
     #[test]
