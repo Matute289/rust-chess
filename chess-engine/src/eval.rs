@@ -1,5 +1,6 @@
+use crate::bitboard::Bitboard;
 use crate::position::Position;
-use crate::types::{Color, PieceType};
+use crate::types::{Color, PieceType, Square};
 
 // ── Material values ───────────────────────────────────────────────────────────
 
@@ -153,6 +154,130 @@ fn pst_score(pt: PieceType, idx: usize, phase: i32) -> i32 {
     }
 }
 
+// ── Pawn structure ────────────────────────────────────────────────────────────
+
+const FILE_MASKS: [u64; 8] = [
+    0x0101010101010101,  // file A
+    0x0202020202020202,  // file B
+    0x0404040404040404,  // file C
+    0x0808080808080808,  // file D
+    0x1010101010101010,  // file E
+    0x2020202020202020,  // file F
+    0x4040404040404040,  // file G
+    0x8080808080808080,  // file H
+];
+
+fn pawn_structure_score(pos: &Position, us: Color) -> i32 {
+    let them = us.flip();
+    let our_pawns   = pos.pieces[us as usize][PieceType::Pawn as usize];
+    let their_pawns = pos.pieces[them as usize][PieceType::Pawn as usize];
+    let mut score = 0i32;
+
+    for sq in our_pawns.squares() {
+        let file = sq.file() as usize;
+        let rank = sq.rank();
+
+        // Doubled pawn penalty: more than one friendly pawn on same file
+        let pawns_on_file = (our_pawns & Bitboard(FILE_MASKS[file])).count();
+        if pawns_on_file > 1 {
+            score -= 20;
+        }
+
+        // Isolated pawn penalty: no friendly pawns on adjacent files
+        let left  = if file > 0 { Bitboard(FILE_MASKS[file - 1]) } else { Bitboard::EMPTY };
+        let right = if file < 7 { Bitboard(FILE_MASKS[file + 1]) } else { Bitboard::EMPTY };
+        let adj_files = left | right;
+        if (our_pawns & adj_files).is_empty() {
+            score -= 15;
+        }
+
+        // Passed pawn bonus: no enemy pawns on same or adjacent files ahead of us
+        let same_and_adj = Bitboard(FILE_MASKS[file]) | adj_files;
+        let front_mask = if us == Color::White {
+            // All squares on ranks above our rank
+            Bitboard(same_and_adj.0 & !((1u64 << ((rank + 1) * 8)) - 1))
+        } else {
+            // All squares on ranks below our rank (rank 0..rank-1)
+            if rank == 0 { Bitboard::EMPTY } else {
+                Bitboard(same_and_adj.0 & ((1u64 << (rank * 8)) - 1))
+            }
+        };
+
+        if (their_pawns & front_mask).is_empty() {
+            // Passed pawn: bonus grows with advancement
+            let advance = if us == Color::White { rank } else { 7 - rank };
+            score += 10 + advance as i32 * 5;
+        }
+    }
+
+    score
+}
+
+// ── Mobility ──────────────────────────────────────────────────────────────────
+
+fn mobility_score(pos: &Position, us: Color) -> i32 {
+    use crate::tables::Tables;
+    let t   = Tables::get();
+    let occ = pos.occupied();
+    let mut attacks = Bitboard::EMPTY;
+
+    for sq in pos.pieces[us as usize][PieceType::Knight as usize].squares() {
+        attacks |= t.knight_attacks[sq.0 as usize];
+    }
+    for sq in pos.pieces[us as usize][PieceType::Bishop as usize].squares() {
+        attacks |= t.bishop_attacks(sq, occ);
+    }
+    for sq in pos.pieces[us as usize][PieceType::Rook as usize].squares() {
+        attacks |= t.rook_attacks(sq, occ);
+    }
+    for sq in pos.pieces[us as usize][PieceType::Queen as usize].squares() {
+        attacks |= t.queen_attacks(sq, occ);
+    }
+
+    attacks.count() as i32
+}
+
+// ── King safety ───────────────────────────────────────────────────────────────
+
+fn king_safety_score(pos: &Position, us: Color, phase: i32) -> i32 {
+    // Only meaningful in opening/middlegame
+    if phase < MAX_PHASE / 3 { return 0; }
+
+    let king_sq   = pos.king_sq(us);
+    let king_file = king_sq.file();
+    let pawns     = pos.pieces[us as usize][PieceType::Pawn as usize];
+    let shield_rank = if us == Color::White { 1u8 } else { 6u8 };
+    let mut score = 0i32;
+
+    // Pawn shield: count pawns on the 3-file zone in front of the king
+    let f_start = king_file.saturating_sub(1);
+    let f_end   = (king_file + 1).min(7);
+    for f in f_start..=f_end {
+        if pawns.get(Square::from_rank_file(shield_rank, f)) { score += 10; }
+    }
+
+    // Center king penalty in opening
+    if king_file >= 2 && king_file <= 5 {
+        score -= 20 * phase / MAX_PHASE;
+    }
+
+    score
+}
+
+// ── Center control ────────────────────────────────────────────────────────────
+
+fn center_control_score(pos: &Position, us: Color) -> i32 {
+    use crate::movegen::MoveGen;
+    // Central squares: d4=27, e4=28, d5=35, e5=36
+    const CENTER: [Square; 4] = [Square(27), Square(28), Square(35), Square(36)];
+    let mut score = 0i32;
+    for &sq in &CENTER {
+        if MoveGen::is_attacked(pos, sq, us)          { score += 5; }
+        if MoveGen::is_attacked(pos, sq, us.flip())   { score -= 5; }
+    }
+    score
+}
+
 // ── Main eval ─────────────────────────────────────────────────────────────────
 
 /// Returns centipawns from side-to-move perspective (positive = good for mover).
@@ -163,14 +288,13 @@ pub fn evaluate(pos: &Position) -> i32 {
 
     let mut score = 0i32;
 
+    // Material + PST
     for pt in [PieceType::Pawn, PieceType::Knight, PieceType::Bishop,
                PieceType::Rook, PieceType::Queen, PieceType::King] {
-        // Material
         let our_count   = pos.pieces[us as usize][pt as usize].count() as i32;
         let their_count = pos.pieces[them as usize][pt as usize].count() as i32;
         score += (our_count - their_count) * piece_value(pt);
 
-        // PST — White perspective: use sq directly; Black: flip rank with ^ 56
         for sq in pos.pieces[us as usize][pt as usize].squares() {
             let idx = if us == Color::White { sq.0 as usize } else { (sq.0 ^ 56) as usize };
             score += pst_score(pt, idx, phase);
@@ -180,6 +304,20 @@ pub fn evaluate(pos: &Position) -> i32 {
             score -= pst_score(pt, idx, phase);
         }
     }
+
+    // Pawn structure
+    score += pawn_structure_score(pos, us);
+    score -= pawn_structure_score(pos, them);
+
+    // Mobility (2cp per attacked square advantage)
+    score += (mobility_score(pos, us) - mobility_score(pos, them)) * 2;
+
+    // King safety
+    score += king_safety_score(pos, us, phase);
+    score -= king_safety_score(pos, them, phase);
+
+    // Center control
+    score += center_control_score(pos, us);
 
     score
 }
@@ -239,5 +377,22 @@ mod tests {
         let castled = evaluate(&pos("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQ1BK1 w kq - 0 1"));
         let center  = evaluate(&pos("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKB2 w kq - 0 1"));
         assert!(castled > center, "castled king {} should beat center king {}", castled, center);
+    }
+
+    #[test]
+    fn doubled_pawns_penalty() {
+        // White has doubled pawns on e-file (e2 + e3), black has normal spread
+        let doubled = evaluate(&pos("k7/8/8/8/8/4P3/4P3/K7 w - - 0 1"));
+        let normal  = evaluate(&pos("k7/8/8/8/8/3P4/4P3/K7 w - - 0 1"));
+        assert!(doubled < normal, "doubled {} should be worse than normal {}", doubled, normal);
+    }
+
+    #[test]
+    fn passed_pawn_bonus() {
+        // White pawn on e5 with no black pawns blocking its path to e8
+        let passed  = evaluate(&pos("k7/8/8/4P3/8/8/8/K7 w - - 0 1"));
+        // Same but black pawn on e7 blocks and contests the path
+        let blocked = evaluate(&pos("k7/4p3/8/4P3/8/8/8/K7 w - - 0 1"));
+        assert!(passed > blocked, "passed {} should beat blocked {}", passed, blocked);
     }
 }
