@@ -116,12 +116,9 @@ mod tests {
         let p = pos("k7/R7/1K6/8/8/8/8/8 w - - 0 1");
         let config = DifficultyConfig::medio();
         let result = Search::new().best_move(&p, &config);
-        if let SearchResult::EngineMove(m, score) = result {
-            assert!(score >= MATE_SCORE - 100, "score {} should be near mate", score);
-            assert_eq!(m.to_uci(), "a7a8", "expected Ra8# got {}", m.to_uci());
-        } else {
-            panic!("expected EngineMove");
-        }
+        let SearchResult::EngineMove(m, score) = result;
+        assert!(score >= MATE_SCORE - 100, "score {} should be near mate", score);
+        assert_eq!(m.to_uci(), "a7a8", "expected Ra8# got {}", m.to_uci());
     }
 
     #[test]
@@ -130,11 +127,8 @@ mod tests {
         let p = pos("k7/8/K7/8/8/8/8/1Q6 w - - 0 1");
         let config = DifficultyConfig::medio();
         let result = Search::new().best_move(&p, &config);
-        if let SearchResult::EngineMove(m, score) = result {
-            assert!(score >= MATE_SCORE - 100, "score {} should be near mate", score);
-        } else {
-            panic!("expected EngineMove");
-        }
+        let SearchResult::EngineMove(_m, score) = result;
+        assert!(score >= MATE_SCORE - 100, "score {} should be near mate", score);
     }
 
     #[test]
