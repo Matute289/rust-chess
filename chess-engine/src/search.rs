@@ -57,16 +57,70 @@ impl Search {
         let mut best       = moves[0];
         let mut best_score = -INF;
 
-        for &m in &moves {
+        // Iterative deepening: search depths 1..=max_depth
+        // Each depth gives a result; only keep the result if we completed the depth fully.
+        for depth in 1..=config.max_depth {
+            if self.nodes >= config.max_nodes { break; }
+
+            let nodes_before = self.nodes;
+            let (candidate, score) = self.search_root(pos, &moves, depth, config.max_nodes);
+
+            // Only update best if we didn't exhaust the budget mid-search
+            let completed = self.nodes < config.max_nodes || depth == 1;
+            if completed {
+                best       = candidate;
+                best_score = score;
+            }
+
+            // Stop early if mate found
+            if best_score.abs() >= MATE_SCORE - 200 { break; }
+
+            // If the budget was exhausted during this depth, stop
+            if self.nodes >= config.max_nodes && nodes_before < config.max_nodes { break; }
+        }
+
+        // Apply random factor for lower difficulties
+        let best = if config.random_factor > 0.0 {
+            self.pick_with_random(&moves, pos, best, best_score, config.random_factor)
+        } else {
+            best
+        };
+
+        SearchResult::EngineMove(best, best_score)
+    }
+
+    fn search_root(&mut self, pos: &Position, moves: &[Move], depth: u8, max_nodes: u64) -> (Move, i32) {
+        let mut best       = moves[0];
+        let mut best_score = -INF;
+
+        for &m in moves {
+            if self.nodes >= max_nodes { break; }
             let child = pos.make_move(m);
-            let score = -self.negamax(&child, config.max_depth - 1, -INF, INF, config.max_nodes);
+            // Use -best_score as alpha floor for fail-soft aspiration (simple version)
+            let score = -self.negamax(&child, depth - 1, -INF, -best_score.max(-INF), max_nodes);
             if score > best_score {
                 best_score = score;
                 best = m;
             }
         }
 
-        SearchResult::EngineMove(best, best_score)
+        (best, best_score)
+    }
+
+    fn pick_with_random(&self, moves: &[Move], pos: &Position, best: Move, best_score: i32, factor: f32) -> Move {
+        // Among moves within factor*100 centipawns of best, pick one pseudo-randomly
+        let threshold = (factor * 100.0) as i32;
+        let candidates: Vec<Move> = moves.iter().copied()
+            .filter(|&m| {
+                let child = pos.make_move(m);
+                let score = -crate::eval::evaluate(&child);
+                best_score - score <= threshold
+            })
+            .collect();
+        if candidates.is_empty() { return best; }
+        // Deterministic pseudo-random using position hash
+        let idx = (pos.hash as usize) % candidates.len();
+        candidates[idx]
     }
 
     fn negamax(&mut self, pos: &Position, depth: u8, mut alpha: i32, beta: i32, max_nodes: u64) -> i32 {
@@ -137,5 +191,17 @@ mod tests {
         let config = DifficultyConfig::facil();
         let result = Search::new().best_move(&p, &config);
         assert!(matches!(result, SearchResult::EngineMove(_, _)));
+    }
+
+    #[test]
+    fn iterative_deepening_finds_mate() {
+        // Same mate-in-1 position but using a depth-64 config to ensure
+        // iterative deepening completes depth 1 (finding the mate) and stops
+        let p = pos("k7/R7/1K6/8/8/8/8/8 w - - 0 1");
+        let config = DifficultyConfig { max_depth: 64, max_nodes: 100_000, random_factor: 0.0 };
+        let result = Search::new().best_move(&p, &config);
+        let SearchResult::EngineMove(m, score) = result;
+        assert!(score >= MATE_SCORE - 100, "score {} should be near mate", score);
+        assert_eq!(m.to_uci(), "a7a8");
     }
 }
