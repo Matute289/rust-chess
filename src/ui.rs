@@ -56,40 +56,6 @@ fn spawn_hud(
             ));
         });
 
-    // "Nueva Partida" button (bottom-left)
-    commands.spawn((
-        NodeBundle {
-            style: Style {
-                position_type: PositionType::Absolute,
-                left: Val::Px(10.0),
-                bottom: Val::Px(10.0),
-                ..default()
-            },
-            ..default()
-        },
-        StatusBar,
-    ))
-    .with_children(|p| {
-        p.spawn((
-            ButtonBundle {
-                style: Style {
-                    width: Val::Px(200.0), height: Val::Px(48.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: BackgroundColor(Color::rgba(0.2, 0.1, 0.1, 0.9)),
-                ..default()
-            },
-            BtnHome,
-        ))
-        .with_children(|btn| {
-            btn.spawn(TextBundle::from_section(
-                "Nueva Partida",
-                TextStyle { font, font_size: 24.0, color: Color::rgb(0.9, 0.9, 0.9) },
-            ));
-        });
-    });
 }
 
 fn despawn_hud(mut commands: Commands, q: Query<Entity, With<StatusBar>>) {

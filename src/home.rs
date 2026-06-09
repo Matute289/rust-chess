@@ -19,7 +19,7 @@ pub enum HomeScreen {
 #[derive(Component)] struct BtnPvC;
 #[derive(Component)] struct BtnPvL;
 #[derive(Component)] struct BtnDifficulty(pub Difficulty);
-#[derive(Component)] struct BtnLoginContinue;
+#[derive(Component)] struct BtnOAuth(pub &'static str); // "Google", "Apple", "GitHub", "Discord"
 #[derive(Component)] struct BtnBack;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ fn build_home_root(commands: &mut Commands, asset_server: &AssetServer, screen: 
         ))
         .with_children(|root| {
             root.spawn(TextBundle::from_section(
-                "♟  AJEDREZ",
+                "AJEDREZ",
                 TextStyle { font: font.clone(), font_size: 68.0, color: Color::rgb(0.95, 0.92, 0.80) },
             ));
             spacer(root, 40.0);
@@ -116,16 +116,20 @@ fn build_home_root(commands: &mut Commands, asset_server: &AssetServer, screen: 
                 }
                 HomeScreen::LoginPrompt => {
                     root.spawn(TextBundle::from_section(
-                        "Player VS Learning requiere una cuenta",
-                        TextStyle { font: font.clone(), font_size: 30.0, color: Color::rgb(0.7, 0.7, 0.85) },
+                        "Iniciar sesión",
+                        TextStyle { font: font.clone(), font_size: 40.0, color: Color::rgb(0.95, 0.92, 0.80) },
                     ));
-                    spacer(root, 10.0);
+                    spacer(root, 8.0);
                     root.spawn(TextBundle::from_section(
-                        "Tu progreso se guardará automáticamente.",
-                        TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.6, 0.6, 0.75) },
+                        "Elige cómo acceder a tu cuenta:",
+                        TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.65, 0.65, 0.80) },
                     ));
                     spacer(root, 28.0);
-                    make_btn(root, font.clone(), "Iniciar sesión / Registrarse", BtnLoginContinue);
+                    make_btn(root, font.clone(), "Continuar con Google",  BtnOAuth("Google"));
+                    make_btn(root, font.clone(), "Continuar con Apple",   BtnOAuth("Apple"));
+                    make_btn(root, font.clone(), "Continuar con GitHub",  BtnOAuth("GitHub"));
+                    make_btn(root, font.clone(), "Continuar con Discord", BtnOAuth("Discord"));
+                    spacer(root, 16.0);
                     make_btn(root, font.clone(), "← Volver", BtnBack);
                 }
                 HomeScreen::DifficultySelect => {
@@ -227,17 +231,18 @@ fn handle_pvl(
     }
 }
 
-// ─── Login continue (stub) ────────────────────────────────────────────────────
+// ─── OAuth login (stub) ───────────────────────────────────────────────────────
 
-fn handle_login_continue(
-    q: Query<&Interaction, (Changed<Interaction>, With<BtnLoginContinue>)>,
+fn handle_oauth(
+    q: Query<(&Interaction, &BtnOAuth), Changed<Interaction>>,
     mut home_screen: ResMut<HomeScreen>,
     mut commands: Commands,
     root_q: Query<Entity, With<HomeRoot>>,
     asset_server: Res<AssetServer>,
 ) {
-    for i in &q {
+    for (i, _btn) in &q {
         if *i == Interaction::Pressed {
+            // Stub: treat any provider click as successful login
             *home_screen = HomeScreen::DifficultySelect;
             rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect);
         }
@@ -297,7 +302,7 @@ impl Plugin for HomePlugin {
                 handle_pvp,
                 handle_pvc,
                 handle_pvl,
-                handle_login_continue,
+                handle_oauth,
                 handle_difficulty,
                 handle_back,
             ).run_if(in_state(AppState::Home)));

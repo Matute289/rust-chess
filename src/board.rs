@@ -214,6 +214,7 @@ fn move_piece(
 ) {
     if !selected_square.is_changed() { return; }
     if promotion.is_pending() { return; }
+    if selected_piece.is_changed() { return; }  // piece just selected this frame, not a move
 
     let square_entity = match selected_square.entity { Some(e) => e, None => return };
 
@@ -304,6 +305,7 @@ fn move_piece(
             if let Some((sq_entity, _)) = squares_query.iter().find(|(_, s)| s.x == square_x && s.y == square_y) {
                 commands.entity(sq_entity).insert(BadMoveFlash(Timer::from_seconds(0.5, TimerMode::Once)));
             }
+            return;  // keep selection, don't reset
         }
     }
     reset_event.send(ResetSelectedEvent);
@@ -316,10 +318,12 @@ fn reset_selected(
     mut events: EventReader<ResetSelectedEvent>,
     mut selected_square: ResMut<SelectedSquare>,
     mut selected_piece: ResMut<SelectedPiece>,
+    mut valid_moves: ResMut<ValidMoveSquares>,
 ) {
     for _ in events.read() {
         selected_square.entity = None;
         selected_piece.entity = None;
+        valid_moves.0.clear();
     }
 }
 
