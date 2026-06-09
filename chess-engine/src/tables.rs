@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 use crate::bitboard::Bitboard;
-use crate::types::{Color, Square};
+use crate::types::Square;
 
 pub struct MagicEntry {
     pub mask:    Bitboard,
