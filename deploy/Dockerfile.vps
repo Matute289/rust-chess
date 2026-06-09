@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y curl && \
 COPY .cargo ./.cargo
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY chess-engine ./chess-engine
 COPY assets ./assets
 RUN wasm-pack build --target web --out-dir web/pkg
 
