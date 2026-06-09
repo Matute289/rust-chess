@@ -242,7 +242,7 @@ fn reset_selected(
 }
 
 #[derive(Component)]
-struct Taken;
+pub struct Taken;
 
 fn despawn_taken_pieces(
     mut commands: Commands,

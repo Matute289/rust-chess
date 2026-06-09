@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::board::{CastlingState, PlayerTurn};
+use crate::board::{CastlingState, PlayerTurn, Taken};
 use crate::pieces::{Piece, PieceColor, PieceType};
 use chess_engine::{
     DifficultyConfig, MoveFlag, Position, Search, SearchResult,
@@ -43,37 +43,18 @@ impl Difficulty {
 
     pub fn config(self) -> DifficultyConfig {
         match self {
-            Difficulty::Principiante => DifficultyConfig { max_depth: 2, max_nodes: 50_000,     random_factor: 0.25 },
-            Difficulty::Facil        => DifficultyConfig { max_depth: 3, max_nodes: 200_000,    random_factor: 0.10 },
-            Difficulty::Medio        => DifficultyConfig { max_depth: 5, max_nodes: 2_000_000,  random_factor: 0.00 },
-            Difficulty::Dificil      => DifficultyConfig { max_depth: 7, max_nodes: 10_000_000, random_factor: 0.00 },
-            Difficulty::Pro          => DifficultyConfig { max_depth: 64,max_nodes: 50_000_000, random_factor: 0.00 },
+            Difficulty::Principiante => DifficultyConfig { max_depth: 2, max_nodes: 50_000,    random_factor: 0.25 },
+            Difficulty::Facil        => DifficultyConfig { max_depth: 3, max_nodes: 200_000,   random_factor: 0.10 },
+            Difficulty::Medio        => DifficultyConfig { max_depth: 5, max_nodes: 2_000_000, random_factor: 0.00 },
+            Difficulty::Dificil      => DifficultyConfig { max_depth: 7, max_nodes: 3_000_000, random_factor: 0.00 },
+            Difficulty::Pro          => DifficultyConfig { max_depth: 64,max_nodes: 5_000_000, random_factor: 0.00 },
         }
     }
 }
 
 // ─── FEN builder ─────────────────────────────────────────────────────────────
 
-pub struct CastlingFen {
-    pub white_kingside:  bool,
-    pub white_queenside: bool,
-    pub black_kingside:  bool,
-    pub black_queenside: bool,
-}
-
-impl CastlingFen {
-    fn to_str(&self) -> String {
-        let mut s = String::new();
-        if self.white_kingside  { s.push('K'); }
-        if self.white_queenside { s.push('Q'); }
-        if self.black_kingside  { s.push('k'); }
-        if self.black_queenside { s.push('q'); }
-        if s.is_empty() { s.push('-'); }
-        s
-    }
-}
-
-pub fn build_fen(pieces: &[Piece], side_to_move: PieceColor, castling: &CastlingFen) -> String {
+pub fn build_fen(pieces: &[Piece], side_to_move: PieceColor, castling: &CastlingState) -> String {
     let mut ranks = Vec::with_capacity(8);
     // FEN starts from rank 8 (x=7) down to rank 1 (x=0)
     for rank in (0u8..8).rev() {
@@ -104,14 +85,13 @@ pub fn build_fen(pieces: &[Piece], side_to_move: PieceColor, castling: &Castling
         ranks.push(rank_str);
     }
     let side = if side_to_move == PieceColor::White { "w" } else { "b" };
-    format!("{} {} {} - 0 1", ranks.join("/"), side, castling.to_str())
+    format!("{} {} {} - 0 1", ranks.join("/"), side, castling.to_fen_str())
 }
 
 // ─── Systems ─────────────────────────────────────────────────────────────────
 
 fn ai_turn_trigger(
     turn: Res<PlayerTurn>,
-    pending: Res<AiMovePending>,
     castling_state: Res<CastlingState>,
     difficulty: Res<Difficulty>,
     pieces_query: Query<&Piece>,
@@ -119,16 +99,10 @@ fn ai_turn_trigger(
 ) {
     if !turn.is_changed() { return; }
     if turn.0 != PieceColor::Black { return; }
-    if pending.0.is_some() { return; }
+    if pending_mut.0.is_some() { return; }
 
     let pieces: Vec<Piece> = pieces_query.iter().copied().collect();
-    let castling = CastlingFen {
-        white_kingside:  castling_state.white_kingside,
-        white_queenside: castling_state.white_queenside,
-        black_kingside:  castling_state.black_kingside,
-        black_queenside: castling_state.black_queenside,
-    };
-    let fen = build_fen(&pieces, PieceColor::Black, &castling);
+    let fen = build_fen(&pieces, PieceColor::Black, &castling_state);
 
     let pos = match Position::from_fen(&fen) {
         Ok(p)  => p,
@@ -144,15 +118,14 @@ fn ai_turn_trigger(
 
 fn ai_apply_move(
     mut commands: Commands,
-    turn: Res<PlayerTurn>,
     mut pending: ResMut<AiMovePending>,
     mut turn_mut: ResMut<PlayerTurn>,
     mut castling_state: ResMut<CastlingState>,
     mut pieces_query: Query<(Entity, &mut Piece)>,
 ) {
     // Only apply on the frame AFTER the trigger (turn is no longer "just changed")
-    if turn.is_changed() { return; }
-    if turn.0 != PieceColor::Black { return; }
+    if turn_mut.is_changed() { return; }
+    if turn_mut.0 != PieceColor::Black { return; }
 
     let mv = match pending.0.take() {
         Some(m) => m,
@@ -190,7 +163,7 @@ fn ai_apply_move(
         if let Some((captured_entity, _)) = all.iter()
             .find(|(_, p)| p.x == to_bevy.0 && p.y == to_bevy.1 && p.color == PieceColor::White)
         {
-            commands.entity(*captured_entity).despawn_recursive();
+            commands.entity(*captured_entity).insert(Taken);
         }
     }
 
@@ -200,7 +173,7 @@ fn ai_apply_move(
         if let Some((ep_entity, _)) = all.iter()
             .find(|(_, p)| p.x == ep_rank && p.y == to_bevy.1 && p.color == PieceColor::White)
         {
-            commands.entity(*ep_entity).despawn_recursive();
+            commands.entity(*ep_entity).insert(Taken);
         }
     }
 
@@ -306,8 +279,8 @@ mod tests {
             piece(White, Queen,  0, 3), piece(White, King,   0, 4), piece(White, Bishop, 0, 5),
             piece(White, Knight, 0, 6), piece(White, Rook,   0, 7),
         ];
-        let castling = CastlingFen { white_kingside: true, white_queenside: true,
-                                     black_kingside: true, black_queenside: true };
+        let castling = CastlingState { white_kingside: true, white_queenside: true,
+                                       black_kingside: true, black_queenside: true };
         let fen = build_fen(&pieces, PieceColor::Black, &castling);
         assert!(fen.starts_with("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq"));
     }
@@ -318,8 +291,8 @@ mod tests {
             piece(PieceColor::White, PieceType::King, 0, 4),
             piece(PieceColor::Black, PieceType::King, 7, 4),
         ];
-        let castling = CastlingFen { white_kingside: false, white_queenside: false,
-                                     black_kingside: false, black_queenside: false };
+        let castling = CastlingState { white_kingside: false, white_queenside: false,
+                                       black_kingside: false, black_queenside: false };
         let fen = build_fen(&pieces, PieceColor::Black, &castling);
         assert!(fen.starts_with("4k3/8/8/8/8/8/8/4K3 b -"));
     }
