@@ -29,21 +29,19 @@ impl Tables {
             knight_attacks: compute_knight_attacks(),
             king_attacks:   compute_king_attacks(),
             pawn_attacks:   compute_pawn_attacks(),
-            bishop_magics:  stub_magic_tables(),
-            rook_magics:    stub_magic_tables(),
+            bishop_magics:  generate_magic_tables(false),
+            rook_magics:    generate_magic_tables(true),
         }
     }
 
     pub fn bishop_attacks(&self, sq: Square, occupancy: Bitboard) -> Bitboard {
         let entry = &self.bishop_magics[sq.0 as usize];
-        if entry.attacks.is_empty() { return Bitboard::EMPTY; }
         let idx = ((occupancy & entry.mask).0.wrapping_mul(entry.magic) >> entry.shift) as usize;
         entry.attacks[idx]
     }
 
     pub fn rook_attacks(&self, sq: Square, occupancy: Bitboard) -> Bitboard {
         let entry = &self.rook_magics[sq.0 as usize];
-        if entry.attacks.is_empty() { return Bitboard::EMPTY; }
         let idx = ((occupancy & entry.mask).0.wrapping_mul(entry.magic) >> entry.shift) as usize;
         entry.attacks[idx]
     }
@@ -107,6 +105,126 @@ fn compute_pawn_attacks() -> [[Bitboard; 64]; 2] {
         );
     }
     attacks
+}
+
+// ── Classical ray-based attacks (used during magic table generation only) ────
+
+fn rook_mask(sq: u8) -> Bitboard {
+    // Relevant occupancy: ranks and files through sq, excluding edges and sq itself
+    let rank = (sq / 8) as i8;
+    let file = (sq % 8) as i8;
+    let mut mask = 0u64;
+    for r in 1i8..7 { if r != rank { mask |= 1u64 << (r * 8 + file); } }
+    for f in 1i8..7 { if f != file { mask |= 1u64 << (rank * 8 + f); } }
+    Bitboard(mask)
+}
+
+fn bishop_mask(sq: u8) -> Bitboard {
+    let rank = (sq / 8) as i8;
+    let file = (sq % 8) as i8;
+    let mut mask = 0u64;
+    for (dr, df) in [(1i8,1i8),(1,-1),(-1,1),(-1,-1)] {
+        let (mut r, mut f) = (rank + dr, file + df);
+        while r > 0 && r < 7 && f > 0 && f < 7 {
+            mask |= 1u64 << (r * 8 + f);
+            r += dr; f += df;
+        }
+    }
+    Bitboard(mask)
+}
+
+fn rook_attacks_classical(sq: u8, blockers: Bitboard) -> Bitboard {
+    let rank = (sq / 8) as i8;
+    let file = (sq % 8) as i8;
+    let mut attacks = 0u64;
+    for (dr, df) in [(1i8,0i8),(-1,0),(0,1),(0,-1)] {
+        let (mut r, mut f) = (rank + dr, file + df);
+        while r >= 0 && r < 8 && f >= 0 && f < 8 {
+            let s = (r * 8 + f) as u8;
+            attacks |= 1u64 << s;
+            if blockers.get(Square(s)) { break; }
+            r += dr; f += df;
+        }
+    }
+    Bitboard(attacks)
+}
+
+fn bishop_attacks_classical(sq: u8, blockers: Bitboard) -> Bitboard {
+    let rank = (sq / 8) as i8;
+    let file = (sq % 8) as i8;
+    let mut attacks = 0u64;
+    for (dr, df) in [(1i8,1i8),(1,-1),(-1,1),(-1,-1)] {
+        let (mut r, mut f) = (rank + dr, file + df);
+        while r >= 0 && r < 8 && f >= 0 && f < 8 {
+            let s = (r * 8 + f) as u8;
+            attacks |= 1u64 << s;
+            if blockers.get(Square(s)) { break; }
+            r += dr; f += df;
+        }
+    }
+    Bitboard(attacks)
+}
+
+fn xorshift(seed: &mut u64) -> u64 {
+    *seed ^= *seed << 13;
+    *seed ^= *seed >> 7;
+    *seed ^= *seed << 17;
+    *seed
+}
+
+fn generate_magic_tables(is_rook: bool) -> Box<[MagicEntry; 64]> {
+    let mut seed = 0x123456789ABCDEFu64;
+    let entries: Vec<MagicEntry> = (0..64u8).map(|sq| {
+        let mask = if is_rook { rook_mask(sq) } else { bishop_mask(sq) };
+        let bits = mask.count();
+        let n = 1usize << bits;
+
+        // Enumerate all subsets of mask using Carry-Rippler trick
+        let mut occ = vec![Bitboard::EMPTY; n];
+        let mut att = vec![Bitboard::EMPTY; n];
+        let mut subset = 0u64;
+        for i in 0..n {
+            occ[i] = Bitboard(subset);
+            att[i] = if is_rook {
+                rook_attacks_classical(sq, Bitboard(subset))
+            } else {
+                bishop_attacks_classical(sq, Bitboard(subset))
+            };
+            // Carry-Rippler: next subset of mask
+            subset = subset.wrapping_sub(mask.0) & mask.0;
+        }
+
+        // Brute-force magic search
+        loop {
+            // Sparse random: AND three random values to get a number with few set bits
+            let magic = xorshift(&mut seed) & xorshift(&mut seed) & xorshift(&mut seed);
+            // Quick filter: upper byte after multiply should be populated
+            if (mask.0.wrapping_mul(magic) >> 56).count_ones() < 6 { continue; }
+
+            let shift = 64 - bits;
+            let mut used = vec![Bitboard::EMPTY; n];
+            let mut ok = true;
+
+            for i in 0..n {
+                let idx = (occ[i].0.wrapping_mul(magic) >> shift) as usize;
+                if used[idx] == Bitboard::EMPTY {
+                    used[idx] = att[i];
+                } else if used[idx] != att[i] {
+                    ok = false;
+                    break;
+                }
+            }
+
+            if ok {
+                return MagicEntry { mask, magic, shift, attacks: used };
+            }
+        }
+    }).collect();
+
+    entries
+        .into_boxed_slice()
+        .try_into()
+        .unwrap_or_else(|_| panic!("expected 64 magic entries"))
 }
 
 fn stub_magic_tables() -> Box<[MagicEntry; 64]> {
@@ -204,5 +322,59 @@ mod tests {
         let attacks = t.pawn_attacks[Color::White as usize][8]; // a2
         assert_eq!(attacks.count(), 1);
         assert!(attacks.get(Square(17))); // b3
+    }
+
+    #[test]
+    fn rook_a1_open_board() {
+        let t = Tables::get();
+        // Rook on a1 (sq 0), empty board: full rank 1 (minus a1) + full file a (minus a1)
+        // = 7 (rank 1: b1-h1) + 7 (file a: a2-a8) = 14 squares
+        let attacks = t.rook_attacks(Square(0), Bitboard::EMPTY);
+        assert_eq!(attacks.count(), 14);
+        assert!(attacks.get(Square(7)));  // h1
+        assert!(attacks.get(Square(56))); // a8
+        assert!(!attacks.get(Square(0))); // not a1 itself
+    }
+
+    #[test]
+    fn rook_a1_with_blocker_on_c1_and_a3() {
+        let t = Tables::get();
+        let occ = Bitboard::EMPTY.set(Square(2)).set(Square(16)); // c1 and a3
+        let attacks = t.rook_attacks(Square(0), occ);
+        // East: b1(1), c1(2) — stops at c1 (included as capture target)
+        assert!(attacks.get(Square(1)));  // b1
+        assert!(attacks.get(Square(2)));  // c1 (capture)
+        assert!(!attacks.get(Square(3))); // d1 — behind blocker
+        // North: a2(8), a3(16) — stops at a3
+        assert!(attacks.get(Square(8)));  // a2
+        assert!(attacks.get(Square(16))); // a3 (capture)
+        assert!(!attacks.get(Square(24))); // a4 — behind blocker
+    }
+
+    #[test]
+    fn bishop_d4_open_board() {
+        let t = Tables::get();
+        // Bishop on d4 (sq 27): 13 diagonal squares on open board
+        let attacks = t.bishop_attacks(Square(27), Bitboard::EMPTY);
+        assert_eq!(attacks.count(), 13);
+    }
+
+    #[test]
+    fn bishop_a1_open_board() {
+        let t = Tables::get();
+        // Bishop on a1 (sq 0): only NE diagonal = b2,c3,d4,e5,f6,g7,h8 = 7 squares
+        let attacks = t.bishop_attacks(Square(0), Bitboard::EMPTY);
+        assert_eq!(attacks.count(), 7);
+        assert!(attacks.get(Square(9)));  // b2
+        assert!(attacks.get(Square(63))); // h8
+    }
+
+    #[test]
+    fn queen_e4_attack_count() {
+        let t = Tables::get();
+        // Queen on e4 (sq 28), open board: rook rays + bishop rays
+        // Rook: 14, Bishop: 13 — they don't overlap, total = 27
+        let attacks = t.queen_attacks(Square(28), Bitboard::EMPTY);
+        assert_eq!(attacks.count(), 27);
     }
 }
