@@ -163,6 +163,7 @@ fn move_piece(
     selected_square: Res<SelectedSquare>,
     selected_piece: Res<SelectedPiece>,
     mut turn: ResMut<PlayerTurn>,
+    mut castling_state: ResMut<CastlingState>,
     squares_query: Query<&Square>,
     mut pieces_query: Query<(Entity, &mut Piece)>,
     mut reset_event: EventWriter<ResetSelectedEvent>,
@@ -199,6 +200,26 @@ fn move_piece(
             }
             piece.x = square.x;
             piece.y = square.y;
+            // Strip castling rights when king or rook moves
+            match (piece.color, piece.piece_type) {
+                (PieceColor::White, PieceType::King) => {
+                    castling_state.white_kingside  = false;
+                    castling_state.white_queenside = false;
+                }
+                (PieceColor::Black, PieceType::King) => {
+                    castling_state.black_kingside  = false;
+                    castling_state.black_queenside = false;
+                }
+                (PieceColor::White, PieceType::Rook) => {
+                    if piece.y == 7 { castling_state.white_kingside  = false; }
+                    if piece.y == 0 { castling_state.white_queenside = false; }
+                }
+                (PieceColor::Black, PieceType::Rook) => {
+                    if piece.y == 7 { castling_state.black_kingside  = false; }
+                    if piece.y == 0 { castling_state.black_queenside = false; }
+                }
+                _ => {}
+            }
             turn.change();
         }
     }
@@ -252,11 +273,42 @@ impl Default for PlayerTurn {
 }
 
 impl PlayerTurn {
-    fn change(&mut self) {
+    pub fn change(&mut self) {
         self.0 = match self.0 {
             PieceColor::White => PieceColor::Black,
             PieceColor::Black => PieceColor::White,
         }
+    }
+}
+
+#[derive(Resource)]
+pub struct CastlingState {
+    pub white_kingside:  bool,
+    pub white_queenside: bool,
+    pub black_kingside:  bool,
+    pub black_queenside: bool,
+}
+
+impl Default for CastlingState {
+    fn default() -> Self {
+        Self {
+            white_kingside:  true,
+            white_queenside: true,
+            black_kingside:  true,
+            black_queenside: true,
+        }
+    }
+}
+
+impl CastlingState {
+    pub fn to_fen_str(&self) -> String {
+        let mut s = String::new();
+        if self.white_kingside  { s.push('K'); }
+        if self.white_queenside { s.push('Q'); }
+        if self.black_kingside  { s.push('k'); }
+        if self.black_queenside { s.push('q'); }
+        if s.is_empty() { s.push('-'); }
+        s
     }
 }
 
@@ -267,6 +319,7 @@ impl Plugin for BoardPlugin {
         app.init_resource::<SelectedSquare>()
             .init_resource::<SelectedPiece>()
             .init_resource::<PlayerTurn>()
+            .init_resource::<CastlingState>()
             .init_resource::<SquareMaterials>()
             .add_event::<ResetSelectedEvent>()
             .add_systems(Startup, create_board)
