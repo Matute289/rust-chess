@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "chess-engine"]
+resolver = "2"
+
 [package]
 name = "bevy_chess"
 version = "0.1.0"
