@@ -1,5 +1,4 @@
 use crate::bitboard::Bitboard;
-#[allow(unused_imports)]
 use crate::moves::{Move, SavedState};
 use crate::types::{CastlingRights, Color, PieceType, Square};
 
@@ -156,6 +155,214 @@ impl Position {
         Ok(pos)
     }
 
+    pub fn make_move_mut(&mut self, m: Move) -> SavedState {
+        let z = zobrist();
+        let us   = self.side_to_move;
+        let them = us.flip();
+        let from = m.from_sq();
+        let to   = m.to_sq();
+
+        // Snapshot state before changes (for unmake)
+        let saved_castling = self.castling_rights;
+        let saved_ep       = self.en_passant;
+        let saved_clock    = self.halfmove_clock;
+        let saved_hash     = self.hash;
+
+        // Find moving piece
+        let mut moving_piece = PieceType::Pawn;
+        for pt in [PieceType::Pawn, PieceType::Knight, PieceType::Bishop,
+                   PieceType::Rook, PieceType::Queen, PieceType::King] {
+            if self.pieces[us as usize][pt as usize].get(from) {
+                moving_piece = pt;
+                break;
+            }
+        }
+
+        // Remove piece from source
+        self.pieces[us as usize][moving_piece as usize] =
+            self.pieces[us as usize][moving_piece as usize].clear(from);
+        self.hash ^= z.piece_sq[us as usize][moving_piece as usize][from.0 as usize];
+
+        // Clear old en-passant from hash
+        if let Some(ep) = self.en_passant {
+            self.hash ^= z.en_passant[ep.file() as usize];
+        }
+        self.en_passant = None;
+
+        // Remove captured piece (ordinary capture, not ep)
+        let mut captured = None;
+        let flag = m.flag();
+        if m.is_capture() && flag != crate::moves::MoveFlag::EnPassant {
+            for pt in [PieceType::Pawn, PieceType::Knight, PieceType::Bishop,
+                       PieceType::Rook, PieceType::Queen, PieceType::King] {
+                if self.pieces[them as usize][pt as usize].get(to) {
+                    self.pieces[them as usize][pt as usize] =
+                        self.pieces[them as usize][pt as usize].clear(to);
+                    self.hash ^= z.piece_sq[them as usize][pt as usize][to.0 as usize];
+                    captured = Some(pt);
+                    break;
+                }
+            }
+        }
+
+        // En passant capture: remove the captured pawn (it's behind the to-square)
+        if flag == crate::moves::MoveFlag::EnPassant {
+            // Captured pawn is on same rank as from, same file as to
+            let ep_pawn_sq = Square::from_rank_file(from.rank(), to.file());
+            self.pieces[them as usize][PieceType::Pawn as usize] =
+                self.pieces[them as usize][PieceType::Pawn as usize].clear(ep_pawn_sq);
+            self.hash ^= z.piece_sq[them as usize][PieceType::Pawn as usize][ep_pawn_sq.0 as usize];
+            captured = Some(PieceType::Pawn);
+        }
+
+        // Place piece at destination (promotion changes the piece type)
+        let placed_piece = if m.is_promotion() { m.promo_piece() } else { moving_piece };
+        self.pieces[us as usize][placed_piece as usize] =
+            self.pieces[us as usize][placed_piece as usize].set(to);
+        self.hash ^= z.piece_sq[us as usize][placed_piece as usize][to.0 as usize];
+
+        // Castling: also move the rook
+        match flag {
+            crate::moves::MoveFlag::KingSideCastle => {
+                let (rf, rt) = if us == Color::White { (Square(7), Square(5)) } else { (Square(63), Square(61)) };
+                self.pieces[us as usize][PieceType::Rook as usize] =
+                    self.pieces[us as usize][PieceType::Rook as usize].clear(rf).set(rt);
+                self.hash ^= z.piece_sq[us as usize][PieceType::Rook as usize][rf.0 as usize];
+                self.hash ^= z.piece_sq[us as usize][PieceType::Rook as usize][rt.0 as usize];
+            }
+            crate::moves::MoveFlag::QueenSideCastle => {
+                let (rf, rt) = if us == Color::White { (Square(0), Square(3)) } else { (Square(56), Square(59)) };
+                self.pieces[us as usize][PieceType::Rook as usize] =
+                    self.pieces[us as usize][PieceType::Rook as usize].clear(rf).set(rt);
+                self.hash ^= z.piece_sq[us as usize][PieceType::Rook as usize][rf.0 as usize];
+                self.hash ^= z.piece_sq[us as usize][PieceType::Rook as usize][rt.0 as usize];
+            }
+            _ => {}
+        }
+
+        // Double push: set new en-passant square
+        if flag == crate::moves::MoveFlag::DoublePush {
+            let ep_sq = Square::from_rank_file((from.rank() + to.rank()) / 2, from.file());
+            self.en_passant = Some(ep_sq);
+            self.hash ^= z.en_passant[ep_sq.file() as usize];
+        }
+
+        // Update castling rights (any move from/to rook or king squares clears rights)
+        self.hash ^= z.castling[self.castling_rights.0 as usize];
+        const CR_MASK: [u8; 64] = {
+            let mut m = [0xFFu8; 64];
+            m[0]  &= !CastlingRights::WHITE_QUEENSIDE;
+            m[4]  &= !(CastlingRights::WHITE_KINGSIDE | CastlingRights::WHITE_QUEENSIDE);
+            m[7]  &= !CastlingRights::WHITE_KINGSIDE;
+            m[56] &= !CastlingRights::BLACK_QUEENSIDE;
+            m[60] &= !(CastlingRights::BLACK_KINGSIDE | CastlingRights::BLACK_QUEENSIDE);
+            m[63] &= !CastlingRights::BLACK_KINGSIDE;
+            m
+        };
+        self.castling_rights = CastlingRights(
+            self.castling_rights.0 & CR_MASK[from.0 as usize] & CR_MASK[to.0 as usize]
+        );
+        self.hash ^= z.castling[self.castling_rights.0 as usize];
+
+        // Halfmove clock
+        self.halfmove_clock = if m.is_capture() || moving_piece == PieceType::Pawn {
+            0
+        } else {
+            self.halfmove_clock.saturating_add(1)
+        };
+
+        // Flip side to move
+        if us == Color::Black { self.fullmove_number += 1; }
+        self.side_to_move = them;
+        self.hash ^= z.black_move;
+
+        SavedState {
+            castling_rights: saved_castling,
+            en_passant: saved_ep,
+            halfmove_clock: saved_clock,
+            captured_piece: captured,
+            captured_color: them,
+            hash: saved_hash,
+        }
+    }
+
+    pub fn unmake_move_mut(&mut self, m: Move, saved: SavedState) {
+        // Flip back
+        self.side_to_move = self.side_to_move.flip();
+        if self.side_to_move == Color::Black { self.fullmove_number -= 1; }
+
+        let us   = self.side_to_move;
+        let them = us.flip();
+        let from = m.from_sq();
+        let to   = m.to_sq();
+
+        // Restore saved state (hash restored entirely from saved.hash)
+        self.castling_rights = saved.castling_rights;
+        self.en_passant      = saved.en_passant;
+        self.halfmove_clock  = saved.halfmove_clock;
+        self.hash            = saved.hash;
+
+        // Find what is on the 'to' square now (the placed piece after make)
+        let placed_piece = if m.is_promotion() {
+            m.promo_piece()
+        } else {
+            let mut pt = PieceType::Pawn;
+            for p in [PieceType::Pawn, PieceType::Knight, PieceType::Bishop,
+                      PieceType::Rook, PieceType::Queen, PieceType::King] {
+                if self.pieces[us as usize][p as usize].get(to) { pt = p; break; }
+            }
+            pt
+        };
+        let moving_piece = if m.is_promotion() { PieceType::Pawn } else { placed_piece };
+
+        // Move piece back to origin
+        self.pieces[us as usize][placed_piece as usize] =
+            self.pieces[us as usize][placed_piece as usize].clear(to);
+        self.pieces[us as usize][moving_piece as usize] =
+            self.pieces[us as usize][moving_piece as usize].set(from);
+
+        // Restore captured piece
+        if let Some(cap_pt) = saved.captured_piece {
+            let cap_sq = if m.is_en_passant() {
+                Square::from_rank_file(from.rank(), to.file())
+            } else {
+                to
+            };
+            self.pieces[them as usize][cap_pt as usize] =
+                self.pieces[them as usize][cap_pt as usize].set(cap_sq);
+        }
+
+        // Undo castling rook move
+        let flag = m.flag();
+        match flag {
+            crate::moves::MoveFlag::KingSideCastle => {
+                let (rf, rt) = if us == Color::White { (Square(7), Square(5)) } else { (Square(63), Square(61)) };
+                self.pieces[us as usize][PieceType::Rook as usize] =
+                    self.pieces[us as usize][PieceType::Rook as usize].clear(rt).set(rf);
+            }
+            crate::moves::MoveFlag::QueenSideCastle => {
+                let (rf, rt) = if us == Color::White { (Square(0), Square(3)) } else { (Square(56), Square(59)) };
+                self.pieces[us as usize][PieceType::Rook as usize] =
+                    self.pieces[us as usize][PieceType::Rook as usize].clear(rt).set(rf);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn make_move(&self, m: Move) -> Position {
+        let mut pos = Position {
+            pieces:          self.pieces,
+            side_to_move:    self.side_to_move,
+            castling_rights: self.castling_rights,
+            en_passant:      self.en_passant,
+            halfmove_clock:  self.halfmove_clock,
+            fullmove_number: self.fullmove_number,
+            hash:            self.hash,
+        };
+        pos.make_move_mut(m);
+        pos
+    }
+
     pub fn to_fen(&self) -> String {
         let mut fen = String::new();
 
@@ -277,5 +484,65 @@ mod tests {
         let pos = startpos();
         assert_eq!(pos.king_sq(Color::White), Square::E1);
         assert_eq!(pos.king_sq(Color::Black), Square::E8);
+    }
+
+    #[test]
+    fn make_e2e4() {
+        let mut pos = startpos();
+        let orig_hash = pos.hash;
+        // e2=12, e4=28
+        let m = crate::moves::Move::new(Square(12), Square(28), crate::moves::MoveFlag::DoublePush);
+        let saved = pos.make_move_mut(m);
+        assert_eq!(pos.side_to_move, Color::Black);
+        assert!(pos.pieces[Color::White as usize][PieceType::Pawn as usize].get(Square(28)));
+        assert!(!pos.pieces[Color::White as usize][PieceType::Pawn as usize].get(Square(12)));
+        assert_eq!(pos.en_passant, Some(Square::from_uci("e3").unwrap())); // e3=20
+        assert_ne!(pos.hash, orig_hash);
+        pos.unmake_move_mut(m, saved);
+        assert_eq!(pos.side_to_move, Color::White);
+        assert!(pos.pieces[Color::White as usize][PieceType::Pawn as usize].get(Square(12)));
+        assert!(!pos.pieces[Color::White as usize][PieceType::Pawn as usize].get(Square(28)));
+        assert_eq!(pos.en_passant, None);
+        assert_eq!(pos.hash, orig_hash);
+    }
+
+    #[test]
+    fn make_capture() {
+        // After 1.e4 e5, white pawn on e4 captures black pawn on e5
+        let mut pos = startpos();
+        let m1 = crate::moves::Move::new(Square(12), Square(28), crate::moves::MoveFlag::DoublePush);
+        pos.make_move_mut(m1);
+        let m2 = crate::moves::Move::new(Square(52), Square(36), crate::moves::MoveFlag::DoublePush);
+        pos.make_move_mut(m2);
+        let m3 = crate::moves::Move::new(Square(28), Square(36), crate::moves::MoveFlag::Capture);
+        pos.make_move_mut(m3);
+        // Black pawn gone from e5 (36), white pawn on e5 (36)
+        assert!(!pos.pieces[Color::Black as usize][PieceType::Pawn as usize].get(Square(36)));
+        assert!(pos.pieces[Color::White as usize][PieceType::Pawn as usize].get(Square(36)));
+    }
+
+    #[test]
+    fn make_unmake_hash_roundtrip() {
+        let mut pos = Position::from_fen(
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
+        ).unwrap();
+        let orig_hash = pos.hash;
+        let m = crate::moves::Move::new(Square(4), Square(6), crate::moves::MoveFlag::KingSideCastle); // e1g1
+        let saved = pos.make_move_mut(m);
+        pos.unmake_move_mut(m, saved);
+        assert_eq!(pos.hash, orig_hash);
+    }
+
+    #[test]
+    fn make_move_immutable() {
+        let pos = startpos();
+        let m = crate::moves::Move::new(Square(12), Square(28), crate::moves::MoveFlag::DoublePush);
+        let pos2 = pos.make_move(m);
+        // Original unchanged
+        assert_eq!(pos.side_to_move, Color::White);
+        assert!(pos.pieces[Color::White as usize][PieceType::Pawn as usize].get(Square(12)));
+        // New position updated
+        assert_eq!(pos2.side_to_move, Color::Black);
+        assert!(pos2.pieces[Color::White as usize][PieceType::Pawn as usize].get(Square(28)));
     }
 }
