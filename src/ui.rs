@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use crate::analysis::AnalysisReport;
 use crate::board::{GameStatus, GameStatusEvent, PlayerTurn};
 use crate::pieces::PieceColor;
 use crate::state::{AppState, GameConfig, GameMode};
@@ -101,6 +102,7 @@ fn handle_status_events(
     mut events:      EventReader<GameStatusEvent>,
     mut commands:    Commands,
     asset_server:    Res<AssetServer>,
+    analysis_report: Res<AnalysisReport>,
     overlay_q:       Query<Entity, With<GameOverOverlay>>,
     banner_q:        Query<Entity, With<CheckBanner>>,
 ) {
@@ -140,17 +142,23 @@ fn handle_status_events(
                     PieceColor::White => "¡Jaque Mate! ¡Blancas ganan!",
                     PieceColor::Black => "¡Jaque Mate! ¡Negras ganan!",
                 };
-                spawn_game_over_overlay(&mut commands, &asset_server, winner_str, false);
+                spawn_game_over_overlay(&mut commands, &asset_server, winner_str, false, analysis_report.0.as_ref());
             }
             GameStatus::Stalemate => {
                 for e in &overlay_q { commands.entity(e).despawn_recursive(); }
-                spawn_game_over_overlay(&mut commands, &asset_server, "¡Empate por ahogado!", true);
+                spawn_game_over_overlay(&mut commands, &asset_server, "¡Empate por ahogado!", true, analysis_report.0.as_ref());
             }
         }
     }
 }
 
-fn spawn_game_over_overlay(commands: &mut Commands, asset_server: &AssetServer, title: &str, is_draw: bool) {
+fn spawn_game_over_overlay(
+    commands:     &mut Commands,
+    asset_server: &AssetServer,
+    title:        &str,
+    is_draw:      bool,
+    report:       Option<&chess_engine::GameReport>,
+) {
     let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
 
     commands
@@ -163,20 +171,62 @@ fn spawn_game_over_overlay(commands: &mut Commands, asset_server: &AssetServer, 
                     flex_direction: FlexDirection::Column,
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
-                    row_gap: Val::Px(20.0),
+                    row_gap: Val::Px(16.0),
                     ..default()
                 },
-                background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.0, 0.80)),
+                background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.0, 0.85)),
                 ..default()
             },
             GameOverOverlay,
         ))
         .with_children(|root| {
+            // Title
             root.spawn(TextBundle::from_section(
                 title,
-                TextStyle { font: font.clone(), font_size: 56.0, color: Color::rgb(1.0, 0.9, 0.2) },
+                TextStyle { font: font.clone(), font_size: 52.0, color: Color::rgb(1.0, 0.9, 0.2) },
             ));
 
+            // Analysis summary block (if available)
+            if let Some(r) = report {
+                let s = &r.summary;
+
+                root.spawn(TextBundle::from_section(
+                    format!(
+                        "Precisión  —  Blancas: {:.0}%   Negras: {:.0}%",
+                        s.accuracy_white, s.accuracy_black
+                    ),
+                    TextStyle { font: font.clone(), font_size: 26.0, color: Color::rgb(0.8, 0.9, 1.0) },
+                ));
+
+                root.spawn(TextBundle::from_section(
+                    format!(
+                        "Blancas: ??{}  ?{}  ⚠{}      Negras: ??{}  ?{}  ⚠{}",
+                        s.blunders[0], s.mistakes[0], s.inaccuracies[0],
+                        s.blunders[1], s.mistakes[1], s.inaccuracies[1],
+                    ),
+                    TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.7, 0.7, 0.7) },
+                ));
+
+                let critical: Vec<String> = r.summary.critical_move_indices
+                    .iter()
+                    .take(3)
+                    .filter_map(|&i| r.move_analyses.get(i).map(|a| (i, a)))
+                    .map(|(i, a)| {
+                        let side = if i % 2 == 0 { "B" } else { "N" };
+                        let move_num = i / 2 + 1;
+                        format!("Mov {}: {} {}", move_num, side, a.played_move)
+                    })
+                    .collect();
+
+                if !critical.is_empty() {
+                    root.spawn(TextBundle::from_section(
+                        format!("Momentos clave: {}", critical.join("  |  ")),
+                        TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(1.0, 0.5, 0.2) },
+                    ));
+                }
+            }
+
+            // Retry button (only for non-draw)
             if !is_draw {
                 root.spawn((
                     ButtonBundle {
@@ -199,6 +249,7 @@ fn spawn_game_over_overlay(commands: &mut Commands, asset_server: &AssetServer, 
                 });
             }
 
+            // Home button
             root.spawn((
                 ButtonBundle {
                     style: Style {
