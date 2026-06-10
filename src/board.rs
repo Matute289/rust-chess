@@ -536,12 +536,14 @@ fn reset_board_state(
     mut valid_moves:     ResMut<ValidMoveSquares>,
     mut selected_square: ResMut<SelectedSquare>,
     mut selected_piece:  ResMut<SelectedPiece>,
+    mut pending_castle:  ResMut<CastlingPending>,
 ) {
     *turn            = PlayerTurn::default();
     *castling        = CastlingState::default();
     valid_moves.0.clear();
     selected_square.entity = None;
     selected_piece.entity  = None;
+    *pending_castle  = CastlingPending::default();
 }
 
 fn reset_game_history(mut history: ResMut<GameHistory>) {
@@ -626,6 +628,154 @@ fn engine_valid_squares(piece: &Piece, pieces_vec: &[Piece], castling: &Castling
     legal_squares_for(&fen, piece.x, piece.y)
 }
 
+fn show_castling_button(
+    mut commands: Commands,
+    pending:      Res<CastlingPending>,
+    root_q:       Query<Entity, With<CastleConfirmRoot>>,
+    asset_server: Res<AssetServer>,
+) {
+    if !pending.is_changed() { return; }
+    for e in root_q.iter() { commands.entity(e).despawn_recursive(); }
+    if !pending.is_pending() { return; }
+
+    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type:   PositionType::Absolute,
+                width:           Val::Percent(100.0),
+                bottom:          Val::Px(120.0),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            ..default()
+        },
+        CastleConfirmRoot,
+    ))
+    .with_children(|p| {
+        p.spawn((
+            ButtonBundle {
+                style: Style {
+                    width:           Val::Px(220.0),
+                    height:          Val::Px(60.0),
+                    justify_content: JustifyContent::Center,
+                    align_items:     AlignItems::Center,
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::rgba(0.1, 0.4, 0.1, 0.92)),
+                ..default()
+            },
+            BtnCastle,
+        ))
+        .with_children(|b| {
+            b.spawn(TextBundle::from_section(
+                "Enrocar",
+                TextStyle { font, font_size: 28.0, color: Color::rgb(0.95, 0.95, 0.95) },
+            ));
+        });
+    });
+}
+
+fn execute_pending_castle(
+    btn_q:              Query<&Interaction, (Changed<Interaction>, With<BtnCastle>)>,
+    mut pending:        ResMut<CastlingPending>,
+    mut pieces_query:   Query<(Entity, &mut Piece)>,
+    mut turn:           ResMut<PlayerTurn>,
+    mut castling_state: ResMut<CastlingState>,
+    mut history:        ResMut<GameHistory>,
+    mut status_event:   EventWriter<GameStatusEvent>,
+    mut reset_event:    EventWriter<ResetSelectedEvent>,
+    root_q:             Query<Entity, With<CastleConfirmRoot>>,
+    mut commands:       Commands,
+) {
+    let pressed = btn_q.iter().any(|i| *i == Interaction::Pressed);
+    if !pressed { return; }
+
+    let (king_ent, side) = match (pending.king_entity, pending.side) {
+        (Some(e), Some(s)) => (e, s),
+        _ => return,
+    };
+
+    // Snapshot board state before any mutations
+    let pieces_entity_vec: Vec<(Entity, Piece)> = pieces_query.iter().map(|(e, p)| (e, *p)).collect();
+
+    let king_snap = match pieces_entity_vec.iter().find(|(e, _)| *e == king_ent).map(|(_, p)| *p) {
+        Some(k) => k,
+        None => return,
+    };
+
+    let dest_file:      u8 = match side { CastleSide::Kingside => 6, CastleSide::Queenside => 2 };
+    let rook_from_file: u8 = match side { CastleSide::Kingside => 7, CastleSide::Queenside => 0 };
+    let rook_to_file:   u8 = match side { CastleSide::Kingside => 5, CastleSide::Queenside => 3 };
+
+    // Record move in history (before mutations)
+    {
+        let pieces_vec: Vec<Piece> = pieces_entity_vec.iter().map(|(_, p)| *p).collect();
+        let from_eng = EngineSquare(king_snap.x * 8 + king_snap.y);
+        let to_eng   = EngineSquare(king_snap.x * 8 + dest_file);
+        let pre_fen  = build_fen(&pieces_vec, turn.0, &castling_state);
+        if let Ok(pre_pos) = chess_engine::Position::from_fen(&pre_fen) {
+            if let Some(eng_mv) = find_engine_move(&pre_pos, from_eng, to_eng) {
+                history.moves.push(eng_mv);
+            }
+        }
+    }
+
+    // Move king
+    if let Ok((_, mut king_p)) = pieces_query.get_mut(king_ent) {
+        king_p.y = dest_file;
+    }
+
+    // Teleport rook
+    if let Some((rook_ent, _)) = pieces_entity_vec.iter()
+        .find(|(_, p)| p.x == king_snap.x && p.y == rook_from_file
+            && p.piece_type == PieceType::Rook && p.color == king_snap.color)
+    {
+        if let Ok((_, mut rook_p)) = pieces_query.get_mut(*rook_ent) {
+            rook_p.y = rook_to_file;
+        }
+    }
+
+    // Update castling rights
+    match king_snap.color {
+        PieceColor::White => { castling_state.white_kingside  = false; castling_state.white_queenside  = false; }
+        PieceColor::Black => { castling_state.black_kingside  = false; castling_state.black_queenside  = false; }
+    }
+
+    turn.change();
+
+    // Check / checkmate / stalemate detection
+    let all_pieces: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
+    let pawns_valid = all_pieces.iter().all(|p| {
+        p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
+    });
+    if pawns_valid {
+        let fen = build_fen(&all_pieces, turn.0, &castling_state);
+        if let Ok(pos) = Position::from_fen(&fen) {
+            if pos.is_checkmate() {
+                let winner = match turn.0 {
+                    PieceColor::White => PieceColor::Black,
+                    PieceColor::Black => PieceColor::White,
+                };
+                status_event.send(GameStatusEvent(GameStatus::Checkmate { winner }));
+            } else if pos.is_stalemate() {
+                status_event.send(GameStatusEvent(GameStatus::Stalemate));
+            } else if pos.is_in_check() {
+                status_event.send(GameStatusEvent(GameStatus::Check));
+            } else {
+                status_event.send(GameStatusEvent(GameStatus::Ok));
+            }
+        }
+    } else {
+        status_event.send(GameStatusEvent(GameStatus::Ok));
+    }
+
+    // Cleanup
+    *pending = CastlingPending::default();
+    for e in root_q.iter() { commands.entity(e).despawn_recursive(); }
+    reset_event.send(ResetSelectedEvent);
+}
+
 pub struct BoardPlugin;
 
 impl Plugin for BoardPlugin {
@@ -652,6 +802,8 @@ impl Plugin for BoardPlugin {
                     despawn_taken_pieces,
                     reset_selected,
                     color_squares,
+                    show_castling_button,
+                    execute_pending_castle,
                 ).chain().run_if(in_state(AppState::Playing)),
             );
     }
