@@ -542,6 +542,24 @@ fn find_engine_move(pos: &chess_engine::Position, from: EngineSquare, to: Engine
         .copied()
 }
 
+fn legal_squares_for(fen: &str, rank: u8, file: u8) -> Vec<(u8, u8)> {
+    let Ok(pos) = Position::from_fen(fen) else { return Vec::new() };
+    let from_sq = EngineSquare(rank * 8 + file);
+    let mut squares: Vec<(u8, u8)> = pos.legal_moves()
+        .into_iter()
+        .filter(|m| m.from_sq() == from_sq)
+        .map(|m| (m.to_sq().rank(), m.to_sq().file()))
+        .collect();
+    squares.sort_unstable();
+    squares.dedup();
+    squares
+}
+
+fn engine_valid_squares(piece: &Piece, pieces_vec: &[Piece], castling: &CastlingState, turn: PieceColor) -> Vec<(u8, u8)> {
+    let fen = build_fen(pieces_vec, turn, castling);
+    legal_squares_for(&fen, piece.x, piece.y)
+}
+
 pub struct BoardPlugin;
 
 impl Plugin for BoardPlugin {
