@@ -16,6 +16,7 @@
 | 3 (Phase 1.5) — Game Analyzer | `plans/2026-06-10-game-analyzer.md` | ✅ Done | 2026-06-10 | `chess-engine/src/analysis.rs`: `analyze_game`, `MoveClass`, `GameReport`, `classify`, `compute_accuracy`. Bevy `AnalysisPlugin` + `GameHistory`. Depth-6 / 200k nodes (not depth-10). Accuracy + error counts + critical moments shown in game-over overlay. |
 | 5 — Legal Move Validation | `plans/2026-06-10-legal-move-validation.md` | ✅ Done | 2026-06-10 | Replaced `is_move_valid + would_leave_king_in_check` with engine `legal_moves()`. `legal_squares_for` + `engine_valid_squares` in board.rs. Pinned pieces and king-in-check moves correctly blocked. 3 unit tests. |
 | 6 — Human Castling | `plans/2026-06-10-human-castling.md` | ✅ Done | 2026-06-10 | `move_piece` saves `eng_mv_flag` from history block; teleports rook on `KingSideCastle`/`QueenSideCastle` before check detection. `drop`+re-borrow pattern for borrow safety. 1 unit test. |
+| 7 — Castling Confirmation Button | `plans/2026-06-10-castling-button.md` | ✅ Done | 2026-06-10 | King→rook or rook→king gesture sets `CastlingPending`; `show_castling_button` spawns floating "Enrocar" button; `execute_pending_castle` runs the move on press. Direct king-to-g1/c1 click blocked in `move_piece`. Tested on mobile. |
 
 ### Deviations from original spec
 - **Sub-project 3 naming**: The plan covers Bevy AI integration (originally listed as sub-project 3 in the roadmap), NOT the Game Analyzer. The Game Analyzer is Phase 1.5 and comes after.
