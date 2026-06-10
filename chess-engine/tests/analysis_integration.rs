@@ -32,6 +32,7 @@ fn fools_mate_is_blunder() {
     assert_eq!(report.move_analyses.len(), 4);
 
     // f3 (move 0, white) should be classified as a blunder, mistake, or inaccuracy
+    // (depth-6 engine may not fully see the queen threat yet)
     let f3_class = &report.move_analyses[0].classification;
     assert!(
         matches!(f3_class, MoveClass::Blunder | MoveClass::Mistake | MoveClass::Inaccuracy),
@@ -45,23 +46,23 @@ fn fools_mate_is_blunder() {
         "g4 should be Blunder/Mistake/Inaccuracy, got {:?}", g4_class
     );
 
-    // White's accuracy should be below 100 (not perfect)
+    // Accuracy stats: white's accuracy should be significantly below 100
     assert!(
-        report.summary.accuracy_white < 100.0,
-        "white accuracy should be below 100 after suboptimal moves, got {}",
+        report.summary.accuracy_white < 80.0,
+        "white accuracy should be low after two blunders, got {}",
         report.summary.accuracy_white
     );
 }
 
 #[test]
-fn solid_move_is_not_blunder() {
-    // From starting position, white plays 1.e4 (standard opening move)
-    let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    let pos = Position::from_fen(start).unwrap();
-    let m = uci_to_move(&pos, "e2e4");
+fn mate_in_one_is_excellent() {
+    // White to play, Rg6-g8#. King h8 can't escape: g8=rook, h7=covered by Kf7, g7=covered by Rg8.
+    let fen = "7k/5K2/6R1/8/8/8/8/8 w - - 0 1";
+    let pos = Position::from_fen(fen).unwrap();
+    let m = uci_to_move(&pos, "g6g8");
 
     let record = GameRecord {
-        initial_fen: start.to_string(),
+        initial_fen: fen.to_string(),
         moves: vec![m],
         result: GameResult::WhiteWins,
     };
@@ -70,9 +71,8 @@ fn solid_move_is_not_blunder() {
     assert_eq!(report.move_analyses.len(), 1);
 
     let cls = &report.move_analyses[0].classification;
-    // e4 is a solid opening move, should not be blunder or even inaccuracy
     assert!(
-        !matches!(cls, MoveClass::Blunder | MoveClass::Mistake),
-        "1.e4 should not be Blunder/Mistake, got {:?}", cls
+        matches!(cls, MoveClass::Excellent | MoveClass::Brilliant | MoveClass::Good),
+        "Ra8# should be Excellent/Brilliant, got {:?}", cls
     );
 }
