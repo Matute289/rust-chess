@@ -226,6 +226,7 @@ fn select_piece(
     mut valid_moves:    ResMut<ValidMoveSquares>,
     turn:               Res<PlayerTurn>,
     castling:           Res<CastlingState>,
+    en_passant:         Res<EnPassantTarget>,
     mut pending_castle: ResMut<CastlingPending>,
     mut reset_event:    EventWriter<ResetSelectedEvent>,
     squares_query:      Query<&Square>,
@@ -251,7 +252,7 @@ fn select_piece(
                 let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
                 *pending_castle = CastlingPending::default();
                 selected_piece.entity = Some(piece_entity);
-                valid_moves.0 = engine_valid_squares(piece, &pieces_vec, &castling, turn.0);
+                valid_moves.0 = engine_valid_squares(piece, &pieces_vec, &castling, turn.0, en_passant.0);
                 break;
             }
         }
@@ -284,7 +285,7 @@ fn select_piece(
                                 if right_ok {
                                     let dest_file = if rook.y == 7 { 6u8 } else { 2u8 };
                                     let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
-                                    if engine_valid_squares(&king, &pieces_vec, &castling, turn.0)
+                                    if engine_valid_squares(&king, &pieces_vec, &castling, turn.0, en_passant.0)
                                         .contains(&(king.x, dest_file))
                                     {
                                         let side = if rook.y == 7 { CastleSide::Kingside } else { CastleSide::Queenside };
@@ -312,7 +313,7 @@ fn select_piece(
                 if selected_piece.entity == Some(piece_entity) { break; } // same piece, no-op
                 let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
                 selected_piece.entity = Some(piece_entity);
-                valid_moves.0 = engine_valid_squares(piece, &pieces_vec, &castling, turn.0);
+                valid_moves.0 = engine_valid_squares(piece, &pieces_vec, &castling, turn.0, en_passant.0);
                 break;
             }
         }
