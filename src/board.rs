@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
-use crate::ai::build_fen;
+use crate::ai::{build_fen, build_fen_ep};
 use crate::captured::{CapturedPieces, PromotionPending};
 use crate::pieces::{Piece, PieceColor, PieceType};
 use crate::state::{AppState, GameConfig, GameMode};
@@ -46,6 +46,9 @@ impl CastlingPending {
 
 #[derive(Component)] pub struct CastleConfirmRoot;
 #[derive(Component)] pub struct BtnCastle;
+
+#[derive(Resource, Default)]
+pub struct EnPassantTarget(pub Option<(u8, u8)>);
 
 #[derive(Event, Clone)]
 pub struct GameStatusEvent(pub GameStatus);
@@ -647,8 +650,14 @@ fn legal_squares_for(fen: &str, rank: u8, file: u8) -> Vec<(u8, u8)> {
     squares
 }
 
-fn engine_valid_squares(piece: &Piece, pieces_vec: &[Piece], castling: &CastlingState, turn: PieceColor) -> Vec<(u8, u8)> {
-    let fen = build_fen(pieces_vec, turn, castling);
+fn engine_valid_squares(
+    piece:      &Piece,
+    pieces_vec: &[Piece],
+    castling:   &CastlingState,
+    turn:       PieceColor,
+    en_passant: Option<(u8, u8)>,
+) -> Vec<(u8, u8)> {
+    let fen = build_fen_ep(pieces_vec, turn, castling, en_passant);
     legal_squares_for(&fen, piece.x, piece.y)
 }
 
@@ -811,6 +820,7 @@ impl Plugin for BoardPlugin {
             .init_resource::<CastlingState>()
             .init_resource::<ValidMoveSquares>()
             .init_resource::<CastlingPending>()
+            .init_resource::<EnPassantTarget>()
             .init_resource::<GameHistory>()
             .init_resource::<SquareMaterials>()
             .add_event::<ResetSelectedEvent>()
@@ -877,5 +887,18 @@ mod tests {
         let squares = legal_squares_for(fen, 0, 4); // White king on e1 (rank 0, file 4)
         assert!(squares.contains(&(0, 6)), "White king must be able to castle kingside to g1");
         assert!(squares.contains(&(0, 2)), "White king must be able to castle queenside to c1");
+    }
+
+    #[test]
+    fn en_passant_capture_is_highlighted() {
+        // White pawn on e5 (rank 4, file 4). Black just played d7-d5 (rank 4, file 3).
+        // En passant target: d6 = rank 5, file 3. FEN encodes this as "d6".
+        let fen = "4k3/ppp1pppp/8/3pP3/8/8/PPPP1PPP/4K3 w - d6 0 1";
+        let squares = legal_squares_for(fen, 4, 4); // White pawn at e5
+        assert!(
+            squares.contains(&(5, 3)),
+            "White pawn must be able to capture en passant to d6 (rank 5, file 3), got: {:?}",
+            squares
+        );
     }
 }
