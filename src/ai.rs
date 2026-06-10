@@ -208,8 +208,6 @@ fn ai_apply_move(
         _ => return,
     };
 
-    history.moves.push(mv);
-
     let ai_color = match game_config.player_side {
         PieceColor::White => PieceColor::Black,
         PieceColor::Black => PieceColor::White,
@@ -236,6 +234,8 @@ fn ai_apply_move(
             return;
         }
     };
+
+    history.moves.push(mv);
 
     let mut just_captured_entity: Option<Entity> = None;
 

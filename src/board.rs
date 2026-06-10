@@ -4,7 +4,7 @@ use crate::ai::build_fen;
 use crate::captured::{CapturedPieces, PromotionPending};
 use crate::pieces::{Piece, PieceColor, PieceType};
 use crate::state::{AppState, GameConfig, GameMode};
-use chess_engine::{Position, Move as EngineMove, Square as EngineSquare};
+use chess_engine::{Move as EngineMove, MoveFlag, Position, Square as EngineSquare};
 
 #[derive(Resource, Default)]
 pub struct SelectedSquare {
@@ -532,10 +532,14 @@ impl CastlingState {
 }
 
 fn find_engine_move(pos: &chess_engine::Position, from: EngineSquare, to: EngineSquare) -> Option<EngineMove> {
-    pos.legal_moves()
+    let candidates: Vec<_> = pos.legal_moves()
         .into_iter()
         .filter(|m| m.from_sq() == from && m.to_sq() == to)
-        .max_by_key(|m| if m.is_promotion() { 1 } else { 0 })
+        .collect();
+    candidates.iter()
+        .find(|m| matches!(m.flag(), MoveFlag::PromoQueen | MoveFlag::PromoQueenCapture))
+        .or_else(|| candidates.first())
+        .copied()
 }
 
 pub struct BoardPlugin;
