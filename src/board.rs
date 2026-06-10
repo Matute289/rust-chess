@@ -595,4 +595,13 @@ mod tests {
         assert!(squares.contains(&(2, 7)), "Ng1-h3 should be legal");   // h3 = rank 2, file 7
         assert_eq!(squares.len(), 2, "Ng1 has exactly 2 legal moves from start");
     }
+
+    #[test]
+    fn king_castling_squares_are_highlighted() {
+        // Standard castling position: both sides can castle both ways
+        let fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+        let squares = legal_squares_for(fen, 0, 4); // White king on e1 (rank 0, file 4)
+        assert!(squares.contains(&(0, 6)), "White king must be able to castle kingside to g1");
+        assert!(squares.contains(&(0, 2)), "White king must be able to castle queenside to c1");
+    }
 }
