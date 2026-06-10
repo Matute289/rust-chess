@@ -6,8 +6,14 @@ mod position;
 pub mod search;
 mod tables;
 mod types;
-mod analysis;
+pub mod analysis;
 
+pub use analysis::{
+    GameRecord, GameReport, GameResult, GameSummary,
+    MoveAnalysis, MoveClass,
+    analyze_game, classify, compute_accuracy,
+    ANALYSIS_DEPTH, ANALYSIS_NODES,
+};
 pub use bitboard::Bitboard;
 pub use moves::{Move, MoveFlag, SavedState};
 pub use position::Position;
