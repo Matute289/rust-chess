@@ -321,8 +321,8 @@ fn move_piece(
         if piece.x == square_x && piece.y == square_y {
             return;
         }
-        if piece.is_move_valid((square_x, square_y), pieces_vec.clone())
-            && !would_leave_king_in_check(&piece, (square_x, square_y), &pieces_vec)
+        if engine_valid_squares(&piece, &pieces_vec, &castling_state, turn.0)
+            .contains(&(square_x, square_y))
         {
             // Capture
             let mut just_captured: Option<Entity> = None;
