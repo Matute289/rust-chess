@@ -31,6 +31,22 @@ impl Square {
 #[derive(Resource, Default)]
 pub struct ValidMoveSquares(pub Vec<(u8, u8)>);
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum CastleSide { Kingside, Queenside }
+
+#[derive(Resource, Default)]
+pub struct CastlingPending {
+    pub king_entity: Option<Entity>,
+    pub side:        Option<CastleSide>,
+}
+
+impl CastlingPending {
+    pub fn is_pending(&self) -> bool { self.king_entity.is_some() }
+}
+
+#[derive(Component)] pub struct CastleConfirmRoot;
+#[derive(Component)] pub struct BtnCastle;
+
 #[derive(Event, Clone)]
 pub struct GameStatusEvent(pub GameStatus);
 
@@ -572,6 +588,7 @@ impl Plugin for BoardPlugin {
             .init_resource::<PlayerTurn>()
             .init_resource::<CastlingState>()
             .init_resource::<ValidMoveSquares>()
+            .init_resource::<CastlingPending>()
             .init_resource::<GameHistory>()
             .init_resource::<SquareMaterials>()
             .add_event::<ResetSelectedEvent>()
