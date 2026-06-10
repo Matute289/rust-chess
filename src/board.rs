@@ -238,6 +238,7 @@ fn select_piece(
     mut selected_piece: ResMut<SelectedPiece>,
     mut valid_moves:    ResMut<ValidMoveSquares>,
     turn:               Res<PlayerTurn>,
+    castling:           Res<CastlingState>,
     squares_query:      Query<&Square>,
     pieces_query:       Query<(Entity, &Piece)>,
     game_config:        Res<GameConfig>,
@@ -260,7 +261,7 @@ fn select_piece(
                 if !human_can_select { break; }
                 let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
                 selected_piece.entity = Some(piece_entity);
-                valid_moves.0 = compute_valid_moves_for_piece(piece, &pieces_vec);
+                valid_moves.0 = engine_valid_squares(piece, &pieces_vec, &castling, turn.0);
                 break;
             }
         }
@@ -276,7 +277,7 @@ fn select_piece(
                 if selected_piece.entity == Some(piece_entity) { break; } // same piece, no-op
                 let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
                 selected_piece.entity = Some(piece_entity);
-                valid_moves.0 = compute_valid_moves_for_piece(piece, &pieces_vec);
+                valid_moves.0 = engine_valid_squares(piece, &pieces_vec, &castling, turn.0);
                 break;
             }
         }
