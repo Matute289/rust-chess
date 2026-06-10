@@ -3,6 +3,27 @@
 
 ---
 
+## Implementation Progress
+
+> **Convention:** When a plan is fully complete (tested locally + on mobile, committed and pushed to `browser`), update this section before doing `/clear`. This keeps the spec as the persistent context across sessions — plans are ephemeral, the spec is the record.
+
+| Sub-project | Plan file | Status | Completed | Notes |
+|---|---|---|---|---|
+| 1 — Chess Engine | `plans/2026-06-09-chess-engine-sub1.md` | ✅ Done | 2026-06-09 | All tasks: types, bitboard, magic tables, position, movegen, perft. WASM-compatible. |
+| 2 — AI Engine | `plans/2026-06-09-chess-ai-engine-sub2.md` | ✅ Done | 2026-06-09 | Eval (material+PST+pawn structure+mobility+king safety), negamax+alpha-beta+ID+TT+move ordering+quiescence+null-move+LMR. |
+| 3 — AI Integration (Bevy) | `plans/2026-06-09-chess-ai-integration-sub3.md` | ✅ Done | 2026-06-09 | FEN builder, AIPlugin, CastlingState, difficulty resource, Tab cycling. Post-plan fixes: check detection, board system ordering, promotion color. |
+| 4 — Frontend Overhaul | `plans/2026-06-09-frontend-overhaul-sub4.md` | ✅ Done | 2026-06-09 | AppState (Home/Playing), HomePlugin (PvP/PvC/PvL + difficulty select + OAuth stub), CapturedPlugin, check banner, game-over overlay, pawn promotion mesh, AI timing, touch/mobile fixes. |
+| 3 (Phase 1.5) — Game Analyzer | `plans/2026-06-10-game-analyzer.md` | ✅ Done | 2026-06-10 | `chess-engine/src/analysis.rs`: `analyze_game`, `MoveClass`, `GameReport`, `classify`, `compute_accuracy`. Bevy `AnalysisPlugin` + `GameHistory`. Depth-6 / 200k nodes (not depth-10). Accuracy + error counts + critical moments shown in game-over overlay. |
+
+### Deviations from original spec
+- **Sub-project 3 naming**: The plan covers Bevy AI integration (originally listed as sub-project 3 in the roadmap), NOT the Game Analyzer. The Game Analyzer is Phase 1.5 and comes after.
+- **WASM threading**: Search runs synchronously (node-count bounded) rather than `AsyncComputeTask` for WASM compatibility. The async approach is deferred to native builds.
+- **En passant**: FEN always passes `-` for en passant target — engine won't generate en passant moves. Acceptable for v1.
+- **Tablebases**: Backend not yet implemented. The `GET /api/tablebase` endpoint is out of scope until Phase 1.5.
+- **Human move validation**: `Piece::is_move_valid` does not prevent moving into check. Full legal enforcement via engine is Sub-project 5.
+
+---
+
 ## Scope
 
 This spec covers sub-projects 1 and 2 of the overall roadmap:
