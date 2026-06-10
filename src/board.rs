@@ -319,8 +319,6 @@ fn move_piece(
             let origin_y = piece.y;
             let king_rank = piece.x;
             let king_color = piece.color;
-            let piece_color = piece.color;
-            let piece_piece_type = piece.piece_type;
             piece.x = square_x;
             piece.y = square_y;
             valid_moves.0.clear();
@@ -352,7 +350,6 @@ fn move_piece(
                 _ => {}
             }
 
-            // Re-borrow the king piece for further use
             if let Ok((_, mut piece)) = pieces_query.get_mut(selected_piece_entity) {
                 // Update castling rights
                 match (piece.color, piece.piece_type) {
