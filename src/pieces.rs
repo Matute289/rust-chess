@@ -231,8 +231,8 @@ fn move_pieces(time: Res<Time>, mut query: Query<(&mut Transform, &Piece)>) {
         let target = Vec3::new(piece.x as f32, 0.0, piece.y as f32);
         let diff = target - transform.translation;
         let dist = diff.length();
-        if dist > 0.1 {
-            let step = time.delta_seconds() * 15.0;
+        if dist > 0.001 {
+            let step = (time.delta_seconds() * 15.0).min(dist);
             transform.translation += diff / dist * step;
         } else {
             transform.translation = target;
