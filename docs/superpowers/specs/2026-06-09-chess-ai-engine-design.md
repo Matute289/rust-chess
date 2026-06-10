@@ -17,11 +17,12 @@
 | 5 — Legal Move Validation | `plans/2026-06-10-legal-move-validation.md` | ✅ Done | 2026-06-10 | Replaced `is_move_valid + would_leave_king_in_check` with engine `legal_moves()`. `legal_squares_for` + `engine_valid_squares` in board.rs. Pinned pieces and king-in-check moves correctly blocked. 3 unit tests. |
 | 6 — Human Castling | `plans/2026-06-10-human-castling.md` | ✅ Done | 2026-06-10 | `move_piece` saves `eng_mv_flag` from history block; teleports rook on `KingSideCastle`/`QueenSideCastle` before check detection. `drop`+re-borrow pattern for borrow safety. 1 unit test. |
 | 7 — Castling Confirmation Button | `plans/2026-06-10-castling-button.md` | ✅ Done | 2026-06-10 | King→rook or rook→king gesture sets `CastlingPending`; `show_castling_button` spawns floating "Enrocar" button; `execute_pending_castle` runs the move on press. Direct king-to-g1/c1 click blocked in `move_piece`. Tested on mobile. |
+| 8 — En Passant | `plans/2026-06-10-en-passant.md` | ✅ Done | 2026-06-10 | `EnPassantTarget` resource tracks ep square after double pawn push (human + AI). `build_fen_ep` passes it to engine. `move_piece` removes captured pawn via `MoveFlag::EnPassant`. All 12 tests pass. |
 
 ### Deviations from original spec
 - **Sub-project 3 naming**: The plan covers Bevy AI integration (originally listed as sub-project 3 in the roadmap), NOT the Game Analyzer. The Game Analyzer is Phase 1.5 and comes after.
 - **WASM threading**: Search runs synchronously (node-count bounded) rather than `AsyncComputeTask` for WASM compatibility. The async approach is deferred to native builds.
-- **En passant**: FEN always passes `-` for en passant target — engine won't generate en passant moves. Acceptable for v1.
+- ~~**En passant**: FEN always passes `-` — resolved in Sub-project 8. `EnPassantTarget` resource now tracks the square correctly.~~
 - **Tablebases**: Backend not yet implemented. The `GET /api/tablebase` endpoint is out of scope until Phase 1.5.
 - **Human move validation**: ~~Resolved in Sub-project 5~~ — engine `legal_moves()` now enforces all rules including pins and king safety.
 
