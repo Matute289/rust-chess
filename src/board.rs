@@ -329,6 +329,7 @@ fn move_piece(
     mut captured:       ResMut<CapturedPieces>,
     mut promotion:      ResMut<PromotionPending>,
     mut pending_castle: ResMut<CastlingPending>,
+    mut en_passant:     ResMut<EnPassantTarget>,
     mut valid_moves:    ResMut<ValidMoveSquares>,
     mut history:        ResMut<GameHistory>,
     squares_query:      Query<(Entity, &Square)>,
@@ -359,14 +360,14 @@ fn move_piece(
         if piece.x == square_x && piece.y == square_y {
             return;
         }
-        if engine_valid_squares(&piece, &pieces_vec, &castling_state, turn.0)
+        if engine_valid_squares(&piece, &pieces_vec, &castling_state, turn.0, en_passant.0)
             .contains(&(square_x, square_y))
         {
             // Castling moves must go through the confirmation button — intercept here
             if piece.piece_type == PieceType::King {
                 let from_eng = EngineSquare(piece.x * 8 + piece.y);
                 let to_eng   = EngineSquare(square_x * 8 + square_y);
-                let pre_fen  = build_fen(&pieces_vec, turn.0, &castling_state);
+                let pre_fen  = build_fen_ep(&pieces_vec, turn.0, &castling_state, en_passant.0);
                 if let Ok(pre_pos) = chess_engine::Position::from_fen(&pre_fen) {
                     if let Some(eng_mv) = find_engine_move(&pre_pos, from_eng, to_eng) {
                         let castle_side = match eng_mv.flag() {
@@ -399,7 +400,7 @@ fn move_piece(
             {
                 let from_eng = EngineSquare(piece.x * 8 + piece.y);
                 let to_eng   = EngineSquare(square_x * 8 + square_y);
-                let pre_fen  = build_fen(&pieces_vec, turn.0, &castling_state);
+                let pre_fen  = build_fen_ep(&pieces_vec, turn.0, &castling_state, en_passant.0);
                 if let Ok(pre_pos) = chess_engine::Position::from_fen(&pre_fen) {
                     if let Some(eng_mv) = find_engine_move(&pre_pos, from_eng, to_eng) {
                         eng_mv_flag = Some(eng_mv.flag());
@@ -408,12 +409,34 @@ fn move_piece(
                 }
             }
 
-            let origin_y = piece.y;
-            let king_rank = piece.x;
+            let origin_y  = piece.y;
+            let king_rank  = piece.x;
             let king_color = piece.color;
+            let piece_type = piece.piece_type;
             piece.x = square_x;
             piece.y = square_y;
             valid_moves.0.clear();
+
+            // En passant capture: the captured pawn is NOT at the destination but at the
+            // capturing pawn's origin rank, same file as destination. Remove it here.
+            if matches!(eng_mv_flag, Some(MoveFlag::EnPassant)) {
+                if let Some((ep_ent, ep_piece)) = pieces_entity_vec.iter()
+                    .find(|(_, p)| p.x == king_rank && p.y == square_y && p.color != king_color)
+                {
+                    captured.add(ep_piece);
+                    commands.entity(*ep_ent).insert(Taken);
+                    just_captured = Some(*ep_ent);
+                }
+            }
+
+            // Set/clear en passant target for opponent's next turn.
+            en_passant.0 = if piece_type == PieceType::Pawn
+                && (square_x as i8 - king_rank as i8).abs() == 2
+            {
+                Some(((king_rank + square_x) / 2, square_y))
+            } else {
+                None
+            };
 
             // Castling: teleport the rook to its post-castling square.
             // pieces_entity_vec is a pre-move snapshot so the rook is still at its origin file.
@@ -494,7 +517,7 @@ fn move_piece(
                     p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
                 });
                 if pawns_valid {
-                    let fen = build_fen(&all_pieces, turn.0, &castling_state);
+                    let fen = build_fen_ep(&all_pieces, turn.0, &castling_state, en_passant.0);
                     if let Ok(pos) = Position::from_fen(&fen) {
                         if pos.is_checkmate() {
                             let winner = match turn.0 {
