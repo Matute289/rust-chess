@@ -588,6 +588,7 @@ fn reset_board_state(
     mut selected_square: ResMut<SelectedSquare>,
     mut selected_piece:  ResMut<SelectedPiece>,
     mut pending_castle:  ResMut<CastlingPending>,
+    mut en_passant:      ResMut<EnPassantTarget>,
 ) {
     *turn            = PlayerTurn::default();
     *castling        = CastlingState::default();
@@ -595,6 +596,7 @@ fn reset_board_state(
     selected_square.entity = None;
     selected_piece.entity  = None;
     *pending_castle  = CastlingPending::default();
+    en_passant.0     = None;
 }
 
 fn reset_game_history(mut history: ResMut<GameHistory>) {
@@ -739,6 +741,7 @@ fn execute_pending_castle(
     mut pieces_query:   Query<(Entity, &mut Piece)>,
     mut turn:           ResMut<PlayerTurn>,
     mut castling_state: ResMut<CastlingState>,
+    mut en_passant:     ResMut<EnPassantTarget>,
     mut history:        ResMut<GameHistory>,
     mut status_event:   EventWriter<GameStatusEvent>,
     mut reset_event:    EventWriter<ResetSelectedEvent>,
@@ -770,7 +773,7 @@ fn execute_pending_castle(
         let pieces_vec: Vec<Piece> = pieces_entity_vec.iter().map(|(_, p)| *p).collect();
         let from_eng = EngineSquare(king_snap.x * 8 + king_snap.y);
         let to_eng   = EngineSquare(king_snap.x * 8 + dest_file);
-        let pre_fen  = build_fen(&pieces_vec, turn.0, &castling_state);
+        let pre_fen  = build_fen_ep(&pieces_vec, turn.0, &castling_state, en_passant.0);
         if let Ok(pre_pos) = chess_engine::Position::from_fen(&pre_fen) {
             if let Some(eng_mv) = find_engine_move(&pre_pos, from_eng, to_eng) {
                 history.moves.push(eng_mv);
@@ -799,6 +802,8 @@ fn execute_pending_castle(
         PieceColor::Black => { castling_state.black_kingside  = false; castling_state.black_queenside  = false; }
     }
 
+    en_passant.0 = None;
+
     turn.change();
 
     // Check / checkmate / stalemate detection
@@ -807,7 +812,7 @@ fn execute_pending_castle(
         p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
     });
     if pawns_valid {
-        let fen = build_fen(&all_pieces, turn.0, &castling_state);
+        let fen = build_fen_ep(&all_pieces, turn.0, &castling_state, None);
         if let Ok(pos) = Position::from_fen(&fen) {
             if pos.is_checkmate() {
                 let winner = match turn.0 {
