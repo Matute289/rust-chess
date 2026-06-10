@@ -324,6 +324,7 @@ fn move_piece(
     mut castling_state: ResMut<CastlingState>,
     mut captured:       ResMut<CapturedPieces>,
     mut promotion:      ResMut<PromotionPending>,
+    mut pending_castle: ResMut<CastlingPending>,
     mut valid_moves:    ResMut<ValidMoveSquares>,
     mut history:        ResMut<GameHistory>,
     squares_query:      Query<(Entity, &Square)>,
@@ -333,6 +334,7 @@ fn move_piece(
 ) {
     if !selected_square.is_changed() { return; }
     if promotion.is_pending() { return; }
+    if pending_castle.is_pending() { return; }
     if selected_piece.is_changed() { return; }  // piece just selected this frame, not a move
 
     let square_entity = match selected_square.entity { Some(e) => e, None => return };
@@ -356,6 +358,28 @@ fn move_piece(
         if engine_valid_squares(&piece, &pieces_vec, &castling_state, turn.0)
             .contains(&(square_x, square_y))
         {
+            // Castling moves must go through the confirmation button — intercept here
+            if piece.piece_type == PieceType::King {
+                let from_eng = EngineSquare(piece.x * 8 + piece.y);
+                let to_eng   = EngineSquare(square_x * 8 + square_y);
+                let pre_fen  = build_fen(&pieces_vec, turn.0, &castling_state);
+                if let Ok(pre_pos) = chess_engine::Position::from_fen(&pre_fen) {
+                    if let Some(eng_mv) = find_engine_move(&pre_pos, from_eng, to_eng) {
+                        let castle_side = match eng_mv.flag() {
+                            MoveFlag::KingSideCastle  => Some(CastleSide::Kingside),
+                            MoveFlag::QueenSideCastle => Some(CastleSide::Queenside),
+                            _ => None,
+                        };
+                        if let Some(side) = castle_side {
+                            pending_castle.king_entity = selected_piece.entity;
+                            pending_castle.side = Some(side);
+                            reset_event.send(ResetSelectedEvent);
+                            return;
+                        }
+                    }
+                }
+            }
+
             // Capture
             let mut just_captured: Option<Entity> = None;
             for (other_entity, other_piece) in &pieces_entity_vec {
