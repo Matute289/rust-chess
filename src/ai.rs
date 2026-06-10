@@ -81,7 +81,12 @@ impl Difficulty {
 
 // ─── FEN builder ─────────────────────────────────────────────────────────────
 
-pub fn build_fen(pieces: &[Piece], side_to_move: PieceColor, castling: &CastlingState) -> String {
+pub fn build_fen_ep(
+    pieces:       &[Piece],
+    side_to_move: PieceColor,
+    castling:     &CastlingState,
+    en_passant:   Option<(u8, u8)>,
+) -> String {
     let mut ranks = Vec::with_capacity(8);
     // FEN starts from rank 8 (x=7) down to rank 1 (x=0)
     for rank in (0u8..8).rev() {
@@ -112,7 +117,15 @@ pub fn build_fen(pieces: &[Piece], side_to_move: PieceColor, castling: &Castling
         ranks.push(rank_str);
     }
     let side = if side_to_move == PieceColor::White { "w" } else { "b" };
-    format!("{} {} {} - 0 1", ranks.join("/"), side, castling.to_fen_str())
+    let ep = match en_passant {
+        Some((rank, file)) => format!("{}{}", (b'a' + file) as char, rank + 1),
+        None => "-".to_string(),
+    };
+    format!("{} {} {} {} 0 1", ranks.join("/"), side, castling.to_fen_str(), ep)
+}
+
+pub fn build_fen(pieces: &[Piece], side_to_move: PieceColor, castling: &CastlingState) -> String {
+    build_fen_ep(pieces, side_to_move, castling, None)
 }
 
 // ─── Systems ─────────────────────────────────────────────────────────────────
@@ -434,5 +447,20 @@ mod tests {
                   Difficulty::Dificil, Difficulty::Pro] {
             assert!(d.min_pre_delay_secs() > 0.0);
         }
+    }
+
+    #[test]
+    fn build_fen_ep_includes_en_passant_target() {
+        let pieces = vec![
+            piece(PieceColor::White, PieceType::King, 0, 4),
+            piece(PieceColor::Black, PieceType::King, 7, 4),
+            piece(PieceColor::White, PieceType::Pawn, 3, 3),
+        ];
+        let castling = CastlingState {
+            white_kingside: false, white_queenside: false,
+            black_kingside: false, black_queenside: false,
+        };
+        let fen = build_fen_ep(&pieces, PieceColor::Black, &castling, Some((2, 3)));
+        assert!(fen.contains("d3"), "FEN must contain 'd3', got: {}", fen);
     }
 }
