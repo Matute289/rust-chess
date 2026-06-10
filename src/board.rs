@@ -4,7 +4,7 @@ use crate::ai::build_fen;
 use crate::captured::{CapturedPieces, PromotionPending};
 use crate::pieces::{Piece, PieceColor, PieceType};
 use crate::state::{AppState, GameConfig, GameMode};
-use chess_engine::Position;
+use chess_engine::{Position, Move as EngineMove, Square as EngineSquare};
 
 #[derive(Resource, Default)]
 pub struct SelectedSquare {
@@ -44,6 +44,19 @@ pub enum GameStatus {
 
 #[derive(Component)]
 pub struct BadMoveFlash(pub Timer);
+
+#[derive(Resource, Default)]
+pub struct GameHistory {
+    pub initial_fen: String,
+    pub moves: Vec<EngineMove>,
+}
+
+impl GameHistory {
+    pub fn reset(&mut self) {
+        self.initial_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string();
+        self.moves.clear();
+    }
+}
 
 #[derive(Resource)]
 struct SquareMaterials {
@@ -279,6 +292,7 @@ fn move_piece(
     mut captured:       ResMut<CapturedPieces>,
     mut promotion:      ResMut<PromotionPending>,
     mut valid_moves:    ResMut<ValidMoveSquares>,
+    mut history:        ResMut<GameHistory>,
     squares_query:      Query<(Entity, &Square)>,
     mut pieces_query:   Query<(Entity, &mut Piece)>,
     mut reset_event:    EventWriter<ResetSelectedEvent>,
@@ -316,6 +330,18 @@ fn move_piece(
                     captured.add(other_piece);
                     commands.entity(*other_entity).insert(Taken);
                     just_captured = Some(*other_entity);
+                }
+            }
+
+            // Record this move in game history (before position changes)
+            {
+                let from_eng = EngineSquare(piece.x * 8 + piece.y);
+                let to_eng   = EngineSquare(square_x * 8 + square_y);
+                let pre_fen  = build_fen(&pieces_vec, turn.0, &castling_state);
+                if let Ok(pre_pos) = chess_engine::Position::from_fen(&pre_fen) {
+                    if let Some(eng_mv) = find_engine_move(&pre_pos, from_eng, to_eng) {
+                        history.moves.push(eng_mv);
+                    }
                 }
             }
 
@@ -452,6 +478,10 @@ fn reset_board_state(
     selected_piece.entity  = None;
 }
 
+fn reset_game_history(mut history: ResMut<GameHistory>) {
+    history.reset();
+}
+
 #[derive(Resource)]
 pub struct PlayerTurn(pub PieceColor);
 
@@ -501,6 +531,13 @@ impl CastlingState {
     }
 }
 
+fn find_engine_move(pos: &chess_engine::Position, from: EngineSquare, to: EngineSquare) -> Option<EngineMove> {
+    pos.legal_moves()
+        .into_iter()
+        .filter(|m| m.from_sq() == from && m.to_sq() == to)
+        .max_by_key(|m| if m.is_promotion() { 1 } else { 0 })
+}
+
 pub struct BoardPlugin;
 
 impl Plugin for BoardPlugin {
@@ -511,11 +548,12 @@ impl Plugin for BoardPlugin {
             .init_resource::<PlayerTurn>()
             .init_resource::<CastlingState>()
             .init_resource::<ValidMoveSquares>()
+            .init_resource::<GameHistory>()
             .init_resource::<SquareMaterials>()
             .add_event::<ResetSelectedEvent>()
             .add_event::<GameStatusEvent>()
             .add_systems(Startup, create_board)
-            .add_systems(OnEnter(AppState::Playing), reset_board_state)
+            .add_systems(OnEnter(AppState::Playing), (reset_board_state, reset_game_history))
             .add_systems(
                 Update,
                 (
