@@ -2,6 +2,12 @@ use bevy::prelude::*;
 use crate::ai::Difficulty;
 use crate::state::{AppState, GameConfig, GameMode};
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const TIMER_PRESETS_MINS: &[u32] = &[
+    1, 3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120,
+];
+
 // ─── Screen state ─────────────────────────────────────────────────────────────
 
 #[derive(Resource, Default, PartialEq, Eq, Clone, Copy)]
@@ -11,6 +17,13 @@ pub enum HomeScreen {
     LoginPrompt,
     ColorSelect,
     DifficultySelect,
+    TimerSelect,
+}
+
+#[derive(Resource)]
+struct SelectedTimerIdx(usize);
+impl Default for SelectedTimerIdx {
+    fn default() -> Self { Self(2) } // 5 min
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -20,10 +33,14 @@ pub enum HomeScreen {
 #[derive(Component)] struct BtnPvC;
 #[derive(Component)] struct BtnPvL;
 #[derive(Component)] struct BtnDifficulty(pub Difficulty);
-#[derive(Component)] struct BtnOAuth(pub &'static str); // "Google", "Apple", "GitHub", "Discord"
+#[derive(Component)] struct BtnOAuth(pub &'static str);
 #[derive(Component)] struct BtnBack;
 #[derive(Component)] struct BtnSideWhite;
 #[derive(Component)] struct BtnSideBlack;
+#[derive(Component)] struct BtnTimerDown;
+#[derive(Component)] struct BtnTimerUp;
+#[derive(Component)] struct BtnNoTimer;
+#[derive(Component)] struct BtnPlay;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -76,11 +93,17 @@ fn spawn_home(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     home_screen: Res<HomeScreen>,
+    timer_idx: Res<SelectedTimerIdx>,
 ) {
-    build_home_root(&mut commands, &asset_server, *home_screen);
+    build_home_root(&mut commands, &asset_server, *home_screen, timer_idx.0);
 }
 
-fn build_home_root(commands: &mut Commands, asset_server: &AssetServer, screen: HomeScreen) {
+fn build_home_root(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    screen: HomeScreen,
+    timer_idx: usize,
+) {
     let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
 
     commands
@@ -164,6 +187,90 @@ fn build_home_root(commands: &mut Commands, asset_server: &AssetServer, screen: 
                     spacer(root, 12.0);
                     make_btn(root, font.clone(), "← Volver", BtnBack);
                 }
+                HomeScreen::TimerSelect => {
+                    root.spawn(TextBundle::from_section(
+                        "¿Cuánto tiempo por turno?",
+                        TextStyle { font: font.clone(), font_size: 32.0, color: Color::rgb(0.7, 0.7, 0.85) },
+                    ));
+                    spacer(root, 28.0);
+
+                    // Selector row: [<]  X min  [>]
+                    root.spawn(NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(12.0),
+                            ..default()
+                        },
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(72.0), height: Val::Px(72.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border: UiRect::all(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::rgba(0.15, 0.15, 0.28, 0.92)),
+                                border_color: BorderColor(Color::rgba(0.4, 0.4, 0.6, 0.5)),
+                                ..default()
+                            },
+                            BtnTimerDown,
+                        ))
+                        .with_children(|p| {
+                            p.spawn(TextBundle::from_section("<", TextStyle {
+                                font: font.clone(), font_size: 32.0, color: Color::rgb(0.92, 0.92, 0.92),
+                            }));
+                        });
+
+                        let mins = TIMER_PRESETS_MINS[timer_idx];
+                        let label = if mins == 1 { "1 min".to_string() } else { format!("{} min", mins) };
+                        row.spawn(NodeBundle {
+                            style: Style {
+                                width: Val::Px(200.0), height: Val::Px(72.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            ..default()
+                        })
+                        .with_children(|p| {
+                            p.spawn(TextBundle::from_section(label, TextStyle {
+                                font: font.clone(), font_size: 40.0, color: Color::rgb(0.95, 0.92, 0.80),
+                            }));
+                        });
+
+                        row.spawn((
+                            ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(72.0), height: Val::Px(72.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border: UiRect::all(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::rgba(0.15, 0.15, 0.28, 0.92)),
+                                border_color: BorderColor(Color::rgba(0.4, 0.4, 0.6, 0.5)),
+                                ..default()
+                            },
+                            BtnTimerUp,
+                        ))
+                        .with_children(|p| {
+                            p.spawn(TextBundle::from_section(">", TextStyle {
+                                font: font.clone(), font_size: 32.0, color: Color::rgb(0.92, 0.92, 0.92),
+                            }));
+                        });
+                    });
+
+                    spacer(root, 20.0);
+                    make_btn(root, font.clone(), "Sin reloj", BtnNoTimer);
+                    make_btn(root, font.clone(), "▶  Jugar",  BtnPlay);
+                    spacer(root, 8.0);
+                    make_btn(root, font.clone(), "← Volver",  BtnBack);
+                }
             }
         });
 }
@@ -177,9 +284,10 @@ fn rebuild_home(
     asset_server: &AssetServer,
     root_q: &Query<Entity, With<HomeRoot>>,
     screen: HomeScreen,
+    timer_idx: usize,
 ) {
     for e in root_q { commands.entity(e).despawn_recursive(); }
-    build_home_root(commands, asset_server, screen);
+    build_home_root(commands, asset_server, screen, timer_idx);
 }
 
 // ─── Button hover highlight ───────────────────────────────────────────────────
@@ -201,12 +309,17 @@ fn highlight_buttons(
 fn handle_pvp(
     q: Query<&Interaction, (Changed<Interaction>, With<BtnPvP>)>,
     mut config: ResMut<GameConfig>,
-    mut next_state: ResMut<NextState<AppState>>,
+    mut home_screen: ResMut<HomeScreen>,
+    mut commands: Commands,
+    root_q: Query<Entity, With<HomeRoot>>,
+    asset_server: Res<AssetServer>,
+    timer_idx: Res<SelectedTimerIdx>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
             config.mode = GameMode::PvP;
-            next_state.set(AppState::Playing);
+            *home_screen = HomeScreen::TimerSelect;
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::TimerSelect, timer_idx.0);
         }
     }
 }
@@ -218,12 +331,13 @@ fn handle_pvc(
     mut commands: Commands,
     root_q: Query<Entity, With<HomeRoot>>,
     asset_server: Res<AssetServer>,
+    timer_idx: Res<SelectedTimerIdx>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
             config.mode = GameMode::PvC;
             *home_screen = HomeScreen::ColorSelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ColorSelect);
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ColorSelect, timer_idx.0);
         }
     }
 }
@@ -235,12 +349,13 @@ fn handle_pvl(
     mut commands: Commands,
     root_q: Query<Entity, With<HomeRoot>>,
     asset_server: Res<AssetServer>,
+    timer_idx: Res<SelectedTimerIdx>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
             config.mode = GameMode::PvL;
             *home_screen = HomeScreen::LoginPrompt;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::LoginPrompt);
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::LoginPrompt, timer_idx.0);
         }
     }
 }
@@ -253,12 +368,12 @@ fn handle_oauth(
     mut commands: Commands,
     root_q: Query<Entity, With<HomeRoot>>,
     asset_server: Res<AssetServer>,
+    timer_idx: Res<SelectedTimerIdx>,
 ) {
     for (i, _btn) in &q {
         if *i == Interaction::Pressed {
-            // Stub: treat any provider click as successful login
             *home_screen = HomeScreen::ColorSelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ColorSelect);
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ColorSelect, timer_idx.0);
         }
     }
 }
@@ -273,19 +388,20 @@ fn handle_color_select(
     mut commands: Commands,
     root_q: Query<Entity, With<HomeRoot>>,
     asset_server: Res<AssetServer>,
+    timer_idx: Res<SelectedTimerIdx>,
 ) {
     for i in &white_q {
         if *i == Interaction::Pressed {
             config.player_side = crate::pieces::PieceColor::White;
             *home_screen = HomeScreen::DifficultySelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect);
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect, timer_idx.0);
         }
     }
     for i in &black_q {
         if *i == Interaction::Pressed {
             config.player_side = crate::pieces::PieceColor::Black;
             *home_screen = HomeScreen::DifficultySelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect);
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect, timer_idx.0);
         }
     }
 }
@@ -295,11 +411,77 @@ fn handle_color_select(
 fn handle_difficulty(
     q: Query<(&Interaction, &BtnDifficulty), Changed<Interaction>>,
     mut config: ResMut<GameConfig>,
-    mut next_state: ResMut<NextState<AppState>>,
+    mut home_screen: ResMut<HomeScreen>,
+    mut commands: Commands,
+    root_q: Query<Entity, With<HomeRoot>>,
+    asset_server: Res<AssetServer>,
+    timer_idx: Res<SelectedTimerIdx>,
 ) {
     for (i, btn) in &q {
         if *i == Interaction::Pressed {
             config.difficulty = btn.0;
+            *home_screen = HomeScreen::TimerSelect;
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::TimerSelect, timer_idx.0);
+        }
+    }
+}
+
+// ─── Timer select ─────────────────────────────────────────────────────────────
+
+fn handle_timer_down(
+    q: Query<&Interaction, (Changed<Interaction>, With<BtnTimerDown>)>,
+    mut timer_idx: ResMut<SelectedTimerIdx>,
+    mut commands: Commands,
+    root_q: Query<Entity, With<HomeRoot>>,
+    asset_server: Res<AssetServer>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            timer_idx.0 = if timer_idx.0 == 0 { TIMER_PRESETS_MINS.len() - 1 } else { timer_idx.0 - 1 };
+            let idx = timer_idx.0;
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::TimerSelect, idx);
+        }
+    }
+}
+
+fn handle_timer_up(
+    q: Query<&Interaction, (Changed<Interaction>, With<BtnTimerUp>)>,
+    mut timer_idx: ResMut<SelectedTimerIdx>,
+    mut commands: Commands,
+    root_q: Query<Entity, With<HomeRoot>>,
+    asset_server: Res<AssetServer>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            timer_idx.0 = (timer_idx.0 + 1) % TIMER_PRESETS_MINS.len();
+            let idx = timer_idx.0;
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::TimerSelect, idx);
+        }
+    }
+}
+
+fn handle_no_timer(
+    q: Query<&Interaction, (Changed<Interaction>, With<BtnNoTimer>)>,
+    mut config: ResMut<GameConfig>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            config.timer_secs = None;
+            next_state.set(AppState::Playing);
+        }
+    }
+}
+
+fn handle_play(
+    q: Query<&Interaction, (Changed<Interaction>, With<BtnPlay>)>,
+    mut config: ResMut<GameConfig>,
+    timer_idx: Res<SelectedTimerIdx>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            config.timer_secs = Some(TIMER_PRESETS_MINS[timer_idx.0] * 60);
             next_state.set(AppState::Playing);
         }
     }
@@ -309,23 +491,36 @@ fn handle_difficulty(
 
 fn handle_back(
     q: Query<&Interaction, (Changed<Interaction>, With<BtnBack>)>,
+    config: Res<GameConfig>,
     mut home_screen: ResMut<HomeScreen>,
     mut commands: Commands,
     root_q: Query<Entity, With<HomeRoot>>,
     asset_server: Res<AssetServer>,
+    timer_idx: Res<SelectedTimerIdx>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
-            *home_screen = HomeScreen::ModeSelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ModeSelect);
+            let target = match *home_screen {
+                HomeScreen::TimerSelect => {
+                    if config.mode == GameMode::PvP { HomeScreen::ModeSelect }
+                    else { HomeScreen::DifficultySelect }
+                }
+                _ => HomeScreen::ModeSelect,
+            };
+            *home_screen = target;
+            rebuild_home(&mut commands, &asset_server, &root_q, target, timer_idx.0);
         }
     }
 }
 
 // ─── Reset HomeScreen on re-enter ─────────────────────────────────────────────
 
-fn reset_home_screen(mut home_screen: ResMut<HomeScreen>) {
+fn reset_home_screen(
+    mut home_screen: ResMut<HomeScreen>,
+    mut timer_idx: ResMut<SelectedTimerIdx>,
+) {
     *home_screen = HomeScreen::ModeSelect;
+    *timer_idx = SelectedTimerIdx::default();
 }
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────
@@ -336,6 +531,7 @@ impl Plugin for HomePlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<HomeScreen>()
+            .init_resource::<SelectedTimerIdx>()
             .add_systems(OnEnter(AppState::Home), (reset_home_screen, spawn_home).chain())
             .add_systems(OnExit(AppState::Home),  despawn_home)
             .add_systems(Update, (
@@ -346,6 +542,10 @@ impl Plugin for HomePlugin {
                 handle_oauth,
                 handle_color_select,
                 handle_difficulty,
+                handle_timer_down,
+                handle_timer_up,
+                handle_no_timer,
+                handle_play,
                 handle_back,
             ).run_if(in_state(AppState::Home)));
     }

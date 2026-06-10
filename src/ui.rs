@@ -14,6 +14,14 @@ use crate::state::{AppState, GameConfig, GameMode};
 #[derive(Component)] struct TurnText;
 #[derive(Component)] struct ThinkingBanner;
 #[derive(Component)] struct BoardLabel { world_pos: Vec3 }
+#[derive(Component)] struct TimerText;
+
+#[derive(Resource, Default)]
+struct TurnTimer {
+    remaining: f32,
+    initial:   f32,
+    disabled:  bool,
+}
 
 // ─── In-game HUD ─────────────────────────────────────────────────────────────
 
@@ -57,6 +65,15 @@ fn spawn_hud(
                 mode_label,
                 TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.6, 0.6, 0.8) },
             ));
+            if config.timer_secs.is_some() {
+                parent.spawn((
+                    TextBundle::from_section(
+                        "--:--",
+                        TextStyle { font: font.clone(), font_size: 42.0, color: Color::rgb(0.9, 0.9, 0.9) },
+                    ),
+                    TimerText,
+                ));
+            }
         });
 
 }
@@ -106,6 +123,7 @@ fn handle_status_events(
     analysis_report: Res<AnalysisReport>,
     overlay_q:       Query<Entity, With<GameOverOverlay>>,
     banner_q:        Query<Entity, With<CheckBanner>>,
+    mut timer:       ResMut<TurnTimer>,
 ) {
     for ev in events.read() {
         // Remove any previous check banner
@@ -138,6 +156,7 @@ fn handle_status_events(
                 });
             }
             GameStatus::Checkmate { winner } => {
+                timer.disabled = true;
                 for e in &overlay_q { commands.entity(e).despawn_recursive(); }
                 let winner_str = match winner {
                     PieceColor::White => "¡Jaque Mate! ¡Blancas ganan!",
@@ -146,6 +165,7 @@ fn handle_status_events(
                 spawn_game_over_overlay(&mut commands, &asset_server, winner_str, false, analysis_report.0.as_ref());
             }
             GameStatus::Stalemate => {
+                timer.disabled = true;
                 for e in &overlay_q { commands.entity(e).despawn_recursive(); }
                 spawn_game_over_overlay(&mut commands, &asset_server, "¡Empate por ahogado!", true, analysis_report.0.as_ref());
             }
@@ -332,6 +352,53 @@ fn despawn_thinking_banner(
     for e in &q { commands.entity(e).despawn_recursive(); }
 }
 
+fn init_turn_timer(config: Res<crate::state::GameConfig>, mut timer: ResMut<TurnTimer>) {
+    let secs = config.timer_secs.map(|s| s as f32).unwrap_or(0.0);
+    timer.initial   = secs;
+    timer.remaining = secs;
+    timer.disabled  = false;
+}
+
+fn tick_timer(
+    time:          Res<Time>,
+    config:        Res<crate::state::GameConfig>,
+    mut timer:     ResMut<TurnTimer>,
+    turn:          Res<PlayerTurn>,
+    mut status_ev: EventWriter<GameStatusEvent>,
+) {
+    if config.timer_secs.is_none() || timer.disabled { return; }
+    if turn.is_changed() {
+        timer.remaining = timer.initial;
+        return;
+    }
+    if timer.remaining <= 0.0 { return; }
+    timer.remaining -= time.delta_seconds();
+    if timer.remaining <= 0.0 {
+        timer.remaining = 0.0;
+        timer.disabled  = true;
+        let winner = match turn.0 {
+            PieceColor::White => PieceColor::Black,
+            PieceColor::Black => PieceColor::White,
+        };
+        status_ev.send(GameStatusEvent(GameStatus::Checkmate { winner }));
+    }
+}
+
+fn update_timer_text(
+    timer: Res<TurnTimer>,
+    mut q:  Query<&mut Text, With<TimerText>>,
+) {
+    if !timer.is_changed() { return; }
+    let secs  = timer.remaining.ceil() as u32;
+    let color = if secs <= 10 { Color::rgb(1.0, 0.25, 0.25) }
+                else if secs <= 30 { Color::rgb(1.0, 0.70, 0.0) }
+                else { Color::rgb(0.9, 0.9, 0.9) };
+    for mut text in &mut q {
+        text.sections[0].value = format!("{:02}:{:02}", secs / 60, secs % 60);
+        text.sections[0].style.color = color;
+    }
+}
+
 fn spawn_board_labels(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/FiraSans-Bold.ttf");
     let style = TextStyle {
@@ -398,7 +465,8 @@ pub struct UIPlugin;
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(OnEnter(AppState::Playing), (spawn_hud, spawn_board_labels))
+            .init_resource::<TurnTimer>()
+            .add_systems(OnEnter(AppState::Playing), (spawn_hud, spawn_board_labels, init_turn_timer))
             .add_systems(OnExit(AppState::Playing), (despawn_hud, despawn_game_over_overlay, despawn_thinking_banner, despawn_board_labels))
             .add_systems(Update, (
                 update_turn_text,
@@ -407,6 +475,8 @@ impl Plugin for UIPlugin {
                 handle_status_events,
                 handle_game_over_buttons,
                 position_board_labels,
+                tick_timer,
+                update_timer_text,
             ).run_if(in_state(AppState::Playing)));
     }
 }

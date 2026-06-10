@@ -21,6 +21,7 @@ pub struct GameConfig {
     pub mode: GameMode,
     pub difficulty: crate::ai::Difficulty,
     pub player_side: PieceColor,
+    pub timer_secs: Option<u32>,
 }
 
 impl Default for GameConfig {
@@ -29,6 +30,7 @@ impl Default for GameConfig {
             mode: GameMode::default(),
             difficulty: crate::ai::Difficulty::default(),
             player_side: PieceColor::White,
+            timer_secs: None,
         }
     }
 }
