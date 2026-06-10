@@ -14,13 +14,15 @@
 | 3 — AI Integration (Bevy) | `plans/2026-06-09-chess-ai-integration-sub3.md` | ✅ Done | 2026-06-09 | FEN builder, AIPlugin, CastlingState, difficulty resource, Tab cycling. Post-plan fixes: check detection, board system ordering, promotion color. |
 | 4 — Frontend Overhaul | `plans/2026-06-09-frontend-overhaul-sub4.md` | ✅ Done | 2026-06-09 | AppState (Home/Playing), HomePlugin (PvP/PvC/PvL + difficulty select + OAuth stub), CapturedPlugin, check banner, game-over overlay, pawn promotion mesh, AI timing, touch/mobile fixes. |
 | 3 (Phase 1.5) — Game Analyzer | `plans/2026-06-10-game-analyzer.md` | ✅ Done | 2026-06-10 | `chess-engine/src/analysis.rs`: `analyze_game`, `MoveClass`, `GameReport`, `classify`, `compute_accuracy`. Bevy `AnalysisPlugin` + `GameHistory`. Depth-6 / 200k nodes (not depth-10). Accuracy + error counts + critical moments shown in game-over overlay. |
+| 5 — Legal Move Validation | `plans/2026-06-10-legal-move-validation.md` | ✅ Done | 2026-06-10 | Replaced `is_move_valid + would_leave_king_in_check` with engine `legal_moves()`. `legal_squares_for` + `engine_valid_squares` in board.rs. Pinned pieces and king-in-check moves correctly blocked. 3 unit tests. |
+| 6 — Human Castling | `plans/2026-06-10-human-castling.md` | ✅ Done | 2026-06-10 | `move_piece` saves `eng_mv_flag` from history block; teleports rook on `KingSideCastle`/`QueenSideCastle` before check detection. `drop`+re-borrow pattern for borrow safety. 1 unit test. |
 
 ### Deviations from original spec
 - **Sub-project 3 naming**: The plan covers Bevy AI integration (originally listed as sub-project 3 in the roadmap), NOT the Game Analyzer. The Game Analyzer is Phase 1.5 and comes after.
 - **WASM threading**: Search runs synchronously (node-count bounded) rather than `AsyncComputeTask` for WASM compatibility. The async approach is deferred to native builds.
 - **En passant**: FEN always passes `-` for en passant target — engine won't generate en passant moves. Acceptable for v1.
 - **Tablebases**: Backend not yet implemented. The `GET /api/tablebase` endpoint is out of scope until Phase 1.5.
-- **Human move validation**: `Piece::is_move_valid` does not prevent moving into check. Full legal enforcement via engine is Sub-project 5.
+- **Human move validation**: ~~Resolved in Sub-project 5~~ — engine `legal_moves()` now enforces all rules including pins and king safety.
 
 ---
 
