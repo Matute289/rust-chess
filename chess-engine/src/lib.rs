@@ -6,6 +6,7 @@ mod position;
 pub mod search;
 mod tables;
 mod types;
+mod analysis;
 
 pub use bitboard::Bitboard;
 pub use moves::{Move, MoveFlag, SavedState};
