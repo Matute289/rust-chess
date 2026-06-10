@@ -223,6 +223,8 @@ fn select_piece(
     mut valid_moves:    ResMut<ValidMoveSquares>,
     turn:               Res<PlayerTurn>,
     castling:           Res<CastlingState>,
+    mut pending_castle: ResMut<CastlingPending>,
+    mut reset_event:    EventWriter<ResetSelectedEvent>,
     squares_query:      Query<&Square>,
     pieces_query:       Query<(Entity, &Piece)>,
     game_config:        Res<GameConfig>,
@@ -244,12 +246,58 @@ fn select_piece(
                 };
                 if !human_can_select { break; }
                 let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
+                *pending_castle = CastlingPending::default();
                 selected_piece.entity = Some(piece_entity);
                 valid_moves.0 = engine_valid_squares(piece, &pieces_vec, &castling, turn.0);
                 break;
             }
         }
     } else {
+        // Castle gesture: king↔rook tapped in any order sets CastlingPending
+        if let Some(sel_ent) = selected_piece.entity {
+            let human_can_castle = match game_config.mode {
+                GameMode::PvP => true,
+                GameMode::PvC | GameMode::PvL => turn.0 == game_config.player_side,
+            };
+            if human_can_castle {
+                if let Some((_, sel_p)) = pieces_query.iter().find(|(e, _)| *e == sel_ent) {
+                    if let Some((clicked_ent, clicked_p)) = pieces_query.iter()
+                        .find(|(_, p)| p.x == square.x && p.y == square.y && p.color == sel_p.color)
+                    {
+                        let pair = match (sel_p.piece_type, clicked_p.piece_type) {
+                            (PieceType::King, PieceType::Rook) => Some((sel_ent,    *sel_p,    *clicked_p)),
+                            (PieceType::Rook, PieceType::King) => Some((clicked_ent, *clicked_p, *sel_p)),
+                            _ => None,
+                        };
+                        if let Some((king_ent, king, rook)) = pair {
+                            if king.x == rook.x {
+                                let right_ok = match (rook.color, rook.y) {
+                                    (PieceColor::White, 7) => castling.white_kingside,
+                                    (PieceColor::White, 0) => castling.white_queenside,
+                                    (PieceColor::Black, 7) => castling.black_kingside,
+                                    (PieceColor::Black, 0) => castling.black_queenside,
+                                    _ => false,
+                                };
+                                if right_ok {
+                                    let dest_file = if rook.y == 7 { 6u8 } else { 2u8 };
+                                    let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
+                                    if engine_valid_squares(&king, &pieces_vec, &castling, turn.0)
+                                        .contains(&(king.x, dest_file))
+                                    {
+                                        let side = if rook.y == 7 { CastleSide::Kingside } else { CastleSide::Queenside };
+                                        pending_castle.king_entity = Some(king_ent);
+                                        pending_castle.side = Some(side);
+                                        reset_event.send(ResetSelectedEvent);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Piece already selected — check if clicking a different own piece to re-select
         for (piece_entity, piece) in pieces_query.iter() {
             if piece.x == square.x && piece.y == square.y && piece.color == turn.0 {
