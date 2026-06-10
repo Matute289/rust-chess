@@ -13,6 +13,7 @@ use crate::state::{AppState, GameConfig, GameMode};
 #[derive(Component)] struct CheckBanner;
 #[derive(Component)] struct TurnText;
 #[derive(Component)] struct ThinkingBanner;
+#[derive(Component)] struct BoardLabel { world_pos: Vec3 }
 
 // ─── In-game HUD ─────────────────────────────────────────────────────────────
 
@@ -331,6 +332,56 @@ fn despawn_thinking_banner(
     for e in &q { commands.entity(e).despawn_recursive(); }
 }
 
+fn spawn_board_labels(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let style = TextStyle {
+        font,
+        font_size: 12.0,
+        color: Color::rgba(0.9, 0.9, 0.9, 0.55),
+    };
+
+    // File labels a–h: just outside rank-1 edge (x = -0.6)
+    for file in 0u8..8 {
+        commands.spawn((
+            TextBundle {
+                text: Text::from_section(((b'a' + file) as char).to_string(), style.clone()),
+                style: Style { position_type: PositionType::Absolute, ..default() },
+                ..default()
+            },
+            BoardLabel { world_pos: Vec3::new(-0.6, 0.0, file as f32) },
+        ));
+    }
+
+    // Rank labels 1–8: just outside file-a edge (z = -0.6)
+    for rank in 0u8..8 {
+        commands.spawn((
+            TextBundle {
+                text: Text::from_section(((b'1' + rank) as char).to_string(), style.clone()),
+                style: Style { position_type: PositionType::Absolute, ..default() },
+                ..default()
+            },
+            BoardLabel { world_pos: Vec3::new(rank as f32, 0.0, -0.6) },
+        ));
+    }
+}
+
+fn despawn_board_labels(mut commands: Commands, q: Query<Entity, With<BoardLabel>>) {
+    for e in &q { commands.entity(e).despawn_recursive(); }
+}
+
+fn position_board_labels(
+    camera_q:  Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut labels: Query<(&BoardLabel, &mut Style)>,
+) {
+    let Ok((camera, cam_gt)) = camera_q.get_single() else { return };
+    for (label, mut style) in &mut labels {
+        if let Some(vp) = camera.world_to_viewport(cam_gt, label.world_pos) {
+            style.left = Val::Px(vp.x - 5.0);
+            style.top  = Val::Px(vp.y - 6.0);
+        }
+    }
+}
+
 fn despawn_game_over_overlay(
     mut commands: Commands,
     q1: Query<Entity, With<GameOverOverlay>>,
@@ -347,14 +398,15 @@ pub struct UIPlugin;
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(OnEnter(AppState::Playing), spawn_hud)
-            .add_systems(OnExit(AppState::Playing), (despawn_hud, despawn_game_over_overlay, despawn_thinking_banner))
+            .add_systems(OnEnter(AppState::Playing), (spawn_hud, spawn_board_labels))
+            .add_systems(OnExit(AppState::Playing), (despawn_hud, despawn_game_over_overlay, despawn_thinking_banner, despawn_board_labels))
             .add_systems(Update, (
                 update_turn_text,
                 update_thinking_banner,
                 handle_new_game_btn,
                 handle_status_events,
                 handle_game_over_buttons,
+                position_board_labels,
             ).run_if(in_state(AppState::Playing)));
     }
 }
