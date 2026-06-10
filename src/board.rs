@@ -303,91 +303,127 @@ fn move_piece(
             }
 
             // Record this move in game history (before position changes)
+            let mut eng_mv_flag: Option<MoveFlag> = None;
             {
                 let from_eng = EngineSquare(piece.x * 8 + piece.y);
                 let to_eng   = EngineSquare(square_x * 8 + square_y);
                 let pre_fen  = build_fen(&pieces_vec, turn.0, &castling_state);
                 if let Ok(pre_pos) = chess_engine::Position::from_fen(&pre_fen) {
                     if let Some(eng_mv) = find_engine_move(&pre_pos, from_eng, to_eng) {
+                        eng_mv_flag = Some(eng_mv.flag());
                         history.moves.push(eng_mv);
                     }
                 }
             }
 
             let origin_y = piece.y;
+            let king_rank = piece.x;
+            let king_color = piece.color;
+            let piece_color = piece.color;
+            let piece_piece_type = piece.piece_type;
             piece.x = square_x;
             piece.y = square_y;
             valid_moves.0.clear();
 
-            // Update castling rights
-            match (piece.color, piece.piece_type) {
-                (PieceColor::White, PieceType::King) => {
-                    castling_state.white_kingside  = false;
-                    castling_state.white_queenside = false;
+            // Castling: teleport the rook to its post-castling square.
+            // pieces_entity_vec is a pre-move snapshot so the rook is still at its origin file.
+            drop(piece);  // Release the mutable borrow on the king temporarily
+            match eng_mv_flag {
+                Some(MoveFlag::KingSideCastle) => {
+                    if let Some((rook_e, _)) = pieces_entity_vec.iter()
+                        .find(|(_, p)| p.x == king_rank && p.y == 7
+                            && p.piece_type == PieceType::Rook && p.color == king_color)
+                    {
+                        if let Ok((_, mut rook)) = pieces_query.get_mut(*rook_e) {
+                            rook.y = 5; // h-file (7) → f-file (5)
+                        }
+                    }
                 }
-                (PieceColor::Black, PieceType::King) => {
-                    castling_state.black_kingside  = false;
-                    castling_state.black_queenside = false;
-                }
-                (PieceColor::White, PieceType::Rook) => {
-                    if origin_y == 7 { castling_state.white_kingside  = false; }
-                    if origin_y == 0 { castling_state.white_queenside = false; }
-                }
-                (PieceColor::Black, PieceType::Rook) => {
-                    if origin_y == 7 { castling_state.black_kingside  = false; }
-                    if origin_y == 0 { castling_state.black_queenside = false; }
+                Some(MoveFlag::QueenSideCastle) => {
+                    if let Some((rook_e, _)) = pieces_entity_vec.iter()
+                        .find(|(_, p)| p.x == king_rank && p.y == 0
+                            && p.piece_type == PieceType::Rook && p.color == king_color)
+                    {
+                        if let Ok((_, mut rook)) = pieces_query.get_mut(*rook_e) {
+                            rook.y = 3; // a-file (0) → d-file (3)
+                        }
+                    }
                 }
                 _ => {}
             }
 
-            // Pawn promotion detection
-            let is_promotion = piece.piece_type == PieceType::Pawn
-                && ((piece.color == PieceColor::White && piece.x == 7)
-                    || (piece.color == PieceColor::Black && piece.x == 0));
-
-            if is_promotion {
-                let available = captured.available_for_promotion(piece.color);
-                if available.is_empty() {
-                    piece.piece_type = PieceType::Queen; // auto-promote
-                } else {
-                    promotion.pawn_entity = Some(selected_piece_entity);
-                    promotion.color = Some(piece.color);
-                    reset_event.send(ResetSelectedEvent);
-                    return; // don't change turn yet — wait for promotion choice
+            // Re-borrow the king piece for further use
+            if let Ok((_, mut piece)) = pieces_query.get_mut(selected_piece_entity) {
+                // Update castling rights
+                match (piece.color, piece.piece_type) {
+                    (PieceColor::White, PieceType::King) => {
+                        castling_state.white_kingside  = false;
+                        castling_state.white_queenside = false;
+                    }
+                    (PieceColor::Black, PieceType::King) => {
+                        castling_state.black_kingside  = false;
+                        castling_state.black_queenside = false;
+                    }
+                    (PieceColor::White, PieceType::Rook) => {
+                        if origin_y == 7 { castling_state.white_kingside  = false; }
+                        if origin_y == 0 { castling_state.white_queenside = false; }
+                    }
+                    (PieceColor::Black, PieceType::Rook) => {
+                        if origin_y == 7 { castling_state.black_kingside  = false; }
+                        if origin_y == 0 { castling_state.black_queenside = false; }
+                    }
+                    _ => {}
                 }
-            }
 
-            turn.change();
+                // Pawn promotion detection
+                let is_promotion = piece.piece_type == PieceType::Pawn
+                    && ((piece.color == PieceColor::White && piece.x == 7)
+                        || (piece.color == PieceColor::Black && piece.x == 0));
 
-            // Check / checkmate / stalemate detection via engine
-            let all_pieces: Vec<Piece> = pieces_query.iter()
-                .filter(|(e, _)| Some(*e) != just_captured)
-                .map(|(_, p)| *p)
-                .collect();
-
-            // Guard: don't call engine if any pawn is at an invalid rank (would cause panic)
-            let pawns_valid = all_pieces.iter().all(|p| {
-                p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
-            });
-            if pawns_valid {
-                let fen = build_fen(&all_pieces, turn.0, &castling_state);
-                if let Ok(pos) = Position::from_fen(&fen) {
-                    if pos.is_checkmate() {
-                        let winner = match turn.0 {
-                            PieceColor::White => PieceColor::Black,
-                            PieceColor::Black => PieceColor::White,
-                        };
-                        status_event.send(GameStatusEvent(GameStatus::Checkmate { winner }));
-                    } else if pos.is_stalemate() {
-                        status_event.send(GameStatusEvent(GameStatus::Stalemate));
-                    } else if pos.is_in_check() {
-                        status_event.send(GameStatusEvent(GameStatus::Check));
+                if is_promotion {
+                    let available = captured.available_for_promotion(piece.color);
+                    if available.is_empty() {
+                        piece.piece_type = PieceType::Queen; // auto-promote
                     } else {
-                        status_event.send(GameStatusEvent(GameStatus::Ok));
+                        promotion.pawn_entity = Some(selected_piece_entity);
+                        promotion.color = Some(piece.color);
+                        reset_event.send(ResetSelectedEvent);
+                        return; // don't change turn yet — wait for promotion choice
                     }
                 }
-            } else {
-                status_event.send(GameStatusEvent(GameStatus::Ok));
+
+                turn.change();
+
+                // Check / checkmate / stalemate detection via engine
+                let all_pieces: Vec<Piece> = pieces_query.iter()
+                    .filter(|(e, _)| Some(*e) != just_captured)
+                    .map(|(_, p)| *p)
+                    .collect();
+
+                // Guard: don't call engine if any pawn is at an invalid rank (would cause panic)
+                let pawns_valid = all_pieces.iter().all(|p| {
+                    p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
+                });
+                if pawns_valid {
+                    let fen = build_fen(&all_pieces, turn.0, &castling_state);
+                    if let Ok(pos) = Position::from_fen(&fen) {
+                        if pos.is_checkmate() {
+                            let winner = match turn.0 {
+                                PieceColor::White => PieceColor::Black,
+                                PieceColor::Black => PieceColor::White,
+                            };
+                            status_event.send(GameStatusEvent(GameStatus::Checkmate { winner }));
+                        } else if pos.is_stalemate() {
+                            status_event.send(GameStatusEvent(GameStatus::Stalemate));
+                        } else if pos.is_in_check() {
+                            status_event.send(GameStatusEvent(GameStatus::Check));
+                        } else {
+                            status_event.send(GameStatusEvent(GameStatus::Ok));
+                        }
+                    }
+                } else {
+                    status_event.send(GameStatusEvent(GameStatus::Ok));
+                }
             }
         } else {
             // Bad move: flash destination square red for 0.5s
