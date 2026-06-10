@@ -1,6 +1,7 @@
 use crate::moves::Move;
 use crate::position::Position;
 use crate::search::{DifficultyConfig, Search, SearchResult};
+use crate::types::Color;
 use crate::movegen::MoveGen;
 
 // ── Analysis constants ────────────────────────────────────────────────────────
@@ -32,7 +33,6 @@ pub struct MoveAnalysis {
     pub fen_before:     String,
     pub played_move:    String,   // UCI string e.g. "e2e4"
     pub best_move:      String,   // UCI string
-    pub score_before:   i32,      // centipawns from mover's POV before the move
     pub score_after:    i32,      // centipawns from mover's POV after the move (negated from opponent)
     pub best_score:     i32,      // engine's best score for this position
     pub eval_loss:      i32,      // best_score - score_after (≥ 0)
@@ -107,6 +107,7 @@ pub fn analyze_game(record: &GameRecord) -> GameReport {
         Err(_) => return empty_report(),
     };
 
+    let first_mover = pos.side_to_move;
     let mut all_analyses: Vec<MoveAnalysis> = Vec::new();
 
     for played_move in &record.moves {
@@ -139,16 +140,13 @@ pub fn analyze_game(record: &GameRecord) -> GameReport {
         // Classify, promote to Brilliant if conditions met
         let mut classification = classify(eval_loss);
         if eval_loss == 0 && dest_attacked {
-            if classification == MoveClass::Excellent {
-                classification = MoveClass::Brilliant;
-            }
+            classification = MoveClass::Brilliant;
         }
 
         all_analyses.push(MoveAnalysis {
             fen_before,
             played_move:    played_move.to_uci(),
             best_move:      best_move_m.to_uci(),
-            score_before:   best_score,
             score_after,
             best_score,
             eval_loss,
@@ -156,14 +154,18 @@ pub fn analyze_game(record: &GameRecord) -> GameReport {
         });
     }
 
-    build_report(all_analyses, &record.result)
+    build_report(all_analyses, &record.result, first_mover)
 }
 
-fn build_report(analyses: Vec<MoveAnalysis>, _result: &GameResult) -> GameReport {
+fn build_report(analyses: Vec<MoveAnalysis>, _result: &GameResult, first_mover: Color) -> GameReport {
+    // Determine which parity of index maps to White vs Black
+    // If White moves first (index 0), even indices = White; otherwise even = Black
+    let white_is_even = first_mover == Color::White;
+
     let white_analyses: Vec<MoveAnalysis> = analyses.iter().enumerate()
-        .filter(|(i, _)| i % 2 == 0).map(|(_, a)| a.clone()).collect();
+        .filter(|(i, _)| (i % 2 == 0) == white_is_even).map(|(_, a)| a.clone()).collect();
     let black_analyses: Vec<MoveAnalysis> = analyses.iter().enumerate()
-        .filter(|(i, _)| i % 2 == 1).map(|(_, a)| a.clone()).collect();
+        .filter(|(i, _)| (i % 2 == 0) != white_is_even).map(|(_, a)| a.clone()).collect();
 
     let accuracy_white = compute_accuracy(&white_analyses);
     let accuracy_black = compute_accuracy(&black_analyses);
@@ -174,14 +176,17 @@ fn build_report(analyses: Vec<MoveAnalysis>, _result: &GameResult) -> GameReport
     let mut critical     = Vec::new();
 
     for (i, a) in analyses.iter().enumerate() {
-        let side = i % 2;
+        // side index: 0 = White, 1 = Black
+        let side = if (i % 2 == 0) == white_is_even { 0 } else { 1 };
         match a.classification {
             MoveClass::Blunder    => blunders[side]     = blunders[side].saturating_add(1),
             MoveClass::Mistake    => mistakes[side]     = mistakes[side].saturating_add(1),
             MoveClass::Inaccuracy => inaccuracies[side] = inaccuracies[side].saturating_add(1),
             _ => {}
         }
-        if a.eval_loss > 100 { critical.push(i); }
+        if matches!(a.classification, MoveClass::Mistake | MoveClass::Blunder) {
+            critical.push(i);
+        }
     }
 
     GameReport {
@@ -231,10 +236,10 @@ mod tests {
         let analyses = vec![
             MoveAnalysis { eval_loss: 0,  classification: MoveClass::Excellent,
                 fen_before: String::new(), played_move: String::new(),
-                best_move: String::new(), score_before: 0, score_after: 0, best_score: 0 },
+                best_move: String::new(), score_after: 0, best_score: 0 },
             MoveAnalysis { eval_loss: 0,  classification: MoveClass::Excellent,
                 fen_before: String::new(), played_move: String::new(),
-                best_move: String::new(), score_before: 0, score_after: 0, best_score: 0 },
+                best_move: String::new(), score_after: 0, best_score: 0 },
         ];
         let acc = compute_accuracy(&analyses);
         assert!((acc - 100.0).abs() < 0.01, "expected 100.0 got {}", acc);
@@ -245,9 +250,9 @@ mod tests {
         let analyses = vec![
             MoveAnalysis { eval_loss: 500, classification: MoveClass::Blunder,
                 fen_before: String::new(), played_move: String::new(),
-                best_move: String::new(), score_before: 0, score_after: -500, best_score: 0 },
+                best_move: String::new(), score_after: -500, best_score: 0 },
         ];
         let acc = compute_accuracy(&analyses);
-        assert!(acc < 50.0, "all-blunder accuracy should be low, got {}", acc);
+        assert!((acc - 0.0).abs() < 0.01, "all-blunder accuracy should be 0.0, got {}", acc);
     }
 }
