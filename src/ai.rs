@@ -171,6 +171,7 @@ fn ai_tick_and_compute(
     difficulty: Res<Difficulty>,
     pieces_query: Query<&Piece>,
     game_config: Res<GameConfig>,
+    en_passant:    Res<crate::board::EnPassantTarget>,
 ) {
     let timer_done = match &mut *phase {
         AiPhase::WaitBeforeThink(timer) => {
@@ -187,7 +188,7 @@ fn ai_tick_and_compute(
     };
 
     let pieces: Vec<Piece> = pieces_query.iter().copied().collect();
-    let fen = build_fen(&pieces, ai_color, &castling_state);
+    let fen = build_fen_ep(&pieces, ai_color, &castling_state, en_passant.0);
 
     let pos = match Position::from_fen(&fen) {
         Ok(p)  => p,
@@ -215,6 +216,7 @@ fn ai_apply_move(
     mut status_ev: EventWriter<GameStatusEvent>,
     game_config: Res<GameConfig>,
     mut history: ResMut<GameHistory>,
+    mut en_passant: ResMut<crate::board::EnPassantTarget>,
 ) {
     let mv = match &*phase {
         AiPhase::Ready(mv) => *mv,
@@ -348,6 +350,14 @@ fn ai_apply_move(
     *phase = AiPhase::Idle;
     turn_mut.change();
 
+    // Update en passant target based on the AI's move
+    en_passant.0 = if mv.flag() == MoveFlag::DoublePush {
+        let ep_rank = (mv.from_sq().rank() + mv.to_sq().rank()) / 2;
+        Some((ep_rank, mv.to_sq().file()))
+    } else {
+        None
+    };
+
     let all_pieces: Vec<Piece> = pieces_query.iter()
         .filter(|(e, _)| Some(*e) != just_captured_entity)
         .map(|(_, p)| *p)
@@ -357,7 +367,7 @@ fn ai_apply_move(
         p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
     });
     if pawns_valid {
-        let fen = build_fen(&all_pieces, turn_mut.0, &castling_state);
+        let fen = build_fen_ep(&all_pieces, turn_mut.0, &castling_state, en_passant.0);
         if let Ok(pos) = Position::from_fen(&fen) {
             if pos.is_checkmate() {
                 let winner = match turn_mut.0 {
