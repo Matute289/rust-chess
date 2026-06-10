@@ -200,38 +200,6 @@ fn select_square(
     }
 }
 
-fn would_leave_king_in_check(mover: &Piece, to: (u8, u8), all_pieces: &[Piece]) -> bool {
-    // Simulate the move: move the piece, remove any captured piece
-    let sim: Vec<Piece> = all_pieces.iter()
-        .filter(|p| !(p.x == to.0 && p.y == to.1 && p.color != mover.color))
-        .map(|p| if p.x == mover.x && p.y == mover.y && p.color == mover.color {
-            Piece { x: to.0, y: to.1, ..*p }
-        } else {
-            *p
-        })
-        .collect();
-
-    // Find own king's position after move
-    let king = match sim.iter().find(|p| p.color == mover.color && p.piece_type == PieceType::King) {
-        Some(k) => (k.x, k.y),
-        None    => return false,
-    };
-
-    // Check if any opponent piece attacks the king
-    sim.iter()
-        .filter(|p| p.color != mover.color)
-        .any(|attacker| attacker.is_move_valid(king, sim.clone()))
-}
-
-fn compute_valid_moves_for_piece(piece: &Piece, pieces_vec: &[Piece]) -> Vec<(u8, u8)> {
-    (0u8..8)
-        .flat_map(|x| (0u8..8).map(move |y| (x, y)))
-        .filter(|&pos| {
-            piece.is_move_valid(pos, pieces_vec.to_vec())
-                && !would_leave_king_in_check(piece, pos, pieces_vec)
-        })
-        .collect()
-}
 
 fn select_piece(
     selected_square:    Res<SelectedSquare>,
