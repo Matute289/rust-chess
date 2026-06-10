@@ -11,12 +11,6 @@
 <body>
   <canvas id="canvas"></canvas>
 
-  <!-- Game controls — always on top, outside Bevy canvas focus -->
-  <div id="game-controls">
-    <button class="game-btn" id="btn-pause" onclick="togglePause()">⏸ Pausa</button>
-    <button class="game-btn" id="btn-exit" onclick="exitGame()">✕ Nueva partida</button>
-  </div>
-
   <!-- Loading overlay — shown until Bevy renders first frame -->
   <div id="loading-overlay">
     <div class="loading-box">
@@ -30,8 +24,12 @@
     <div class="pause-box">
       <div class="pause-title">⏸ PAUSA</div>
       <button class="pause-resume-btn" onclick="togglePause()">▶ Reanudar</button>
+      <button class="pause-new-game-btn" onclick="exitGame()">✕ Nueva partida</button>
     </div>
   </div>
+
+  <!-- Keyboard hint — shown only during Playing state -->
+  <div id="esc-hint">Tecla 'Esc' para abrir el menú</div>
 
   <script type="module" src="app.js"></script>
 </body>

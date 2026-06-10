@@ -3,7 +3,7 @@ use bevy_mod_picking::prelude::*;
 use crate::ai::build_fen;
 use crate::captured::{CapturedPieces, PromotionPending};
 use crate::pieces::{Piece, PieceColor, PieceType};
-use crate::state::AppState;
+use crate::state::{AppState, GameConfig, GameMode};
 use chess_engine::Position;
 
 #[derive(Resource, Default)]
@@ -36,6 +36,7 @@ pub struct GameStatusEvent(pub GameStatus);
 
 #[derive(Clone, PartialEq)]
 pub enum GameStatus {
+    Ok,
     Check,
     Checkmate { winner: PieceColor },
     Stalemate,
@@ -46,24 +47,37 @@ pub struct BadMoveFlash(pub Timer);
 
 #[derive(Resource)]
 struct SquareMaterials {
-    highlight_color: Handle<StandardMaterial>,  // hover = blue
-    selected_color:  Handle<StandardMaterial>,  // selected = green
-    valid_color:     Handle<StandardMaterial>,  // valid move dest = lighter green
-    bad_move_color:  Handle<StandardMaterial>,  // invalid move flash = red
-    black_color:     Handle<StandardMaterial>,
+    highlight_white: Handle<StandardMaterial>,
+    highlight_black: Handle<StandardMaterial>,
+    selected_white:  Handle<StandardMaterial>,
+    selected_black:  Handle<StandardMaterial>,
+    valid_white:     Handle<StandardMaterial>,
+    valid_black:     Handle<StandardMaterial>,
+    bad_white:       Handle<StandardMaterial>,
+    bad_black:       Handle<StandardMaterial>,
     white_color:     Handle<StandardMaterial>,
+    black_color:     Handle<StandardMaterial>,
 }
 
 impl FromWorld for SquareMaterials {
     fn from_world(world: &mut World) -> Self {
         let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
         SquareMaterials {
-            highlight_color: materials.add(Color::rgb(0.1, 0.3, 0.8)),   // blue
-            selected_color:  materials.add(Color::rgb(0.1, 0.7, 0.2)),   // green
-            valid_color:     materials.add(Color::rgb(0.2, 0.6, 0.15)),  // lighter green
-            bad_move_color:  materials.add(Color::rgb(0.8, 0.1, 0.1)),   // red
-            black_color:     materials.add(Color::rgb(0.0, 0.1, 0.1)),
-            white_color:     materials.add(Color::rgb(1.0, 0.9, 0.9)),
+            // Hover (blue tint): white/black base with subtle blue wash
+            highlight_white: materials.add(Color::rgb(0.75, 0.82, 1.00)),
+            highlight_black: materials.add(Color::rgb(0.10, 0.18, 0.45)),
+            // Selected (green tint)
+            selected_white:  materials.add(Color::rgb(0.72, 1.00, 0.78)),
+            selected_black:  materials.add(Color::rgb(0.06, 0.42, 0.16)),
+            // Valid move destination (lighter green tint)
+            valid_white:     materials.add(Color::rgb(0.78, 1.00, 0.78)),
+            valid_black:     materials.add(Color::rgb(0.10, 0.38, 0.12)),
+            // Bad move flash (red tint)
+            bad_white:       materials.add(Color::rgb(1.00, 0.72, 0.72)),
+            bad_black:       materials.add(Color::rgb(0.42, 0.06, 0.06)),
+            // Original colors
+            white_color:     materials.add(Color::rgb(1.00, 0.90, 0.90)),
+            black_color:     materials.add(Color::rgb(0.00, 0.10, 0.10)),
         }
     }
 }
@@ -107,21 +121,26 @@ fn color_squares(
         if let Some(mut f) = flash {
             f.0.tick(time.delta());
             if !f.0.finished() {
-                *material = materials.bad_move_color.clone();
+                *material = if square.is_white() { materials.bad_white.clone() } else { materials.bad_black.clone() };
                 continue;
             }
             commands.entity(entity).remove::<BadMoveFlash>();
         }
 
         let is_valid = valid_moves.0.contains(&(square.x, square.y));
+        let is_white = square.is_white();
 
         *material = match interaction {
             Some(PickingInteraction::Hovered | PickingInteraction::Pressed) => {
-                materials.highlight_color.clone()
+                if is_white { materials.highlight_white.clone() } else { materials.highlight_black.clone() }
             }
-            _ if Some(entity) == selected_square.entity => materials.selected_color.clone(),
-            _ if is_valid => materials.valid_color.clone(),
-            _ if square.is_white() => materials.white_color.clone(),
+            _ if Some(entity) == selected_square.entity => {
+                if is_white { materials.selected_white.clone() } else { materials.selected_black.clone() }
+            }
+            _ if is_valid => {
+                if is_white { materials.valid_white.clone() } else { materials.valid_black.clone() }
+            }
+            _ if is_white => materials.white_color.clone(),
             _ => materials.black_color.clone(),
         };
     }
@@ -168,6 +187,39 @@ fn select_square(
     }
 }
 
+fn would_leave_king_in_check(mover: &Piece, to: (u8, u8), all_pieces: &[Piece]) -> bool {
+    // Simulate the move: move the piece, remove any captured piece
+    let sim: Vec<Piece> = all_pieces.iter()
+        .filter(|p| !(p.x == to.0 && p.y == to.1 && p.color != mover.color))
+        .map(|p| if p.x == mover.x && p.y == mover.y && p.color == mover.color {
+            Piece { x: to.0, y: to.1, ..*p }
+        } else {
+            *p
+        })
+        .collect();
+
+    // Find own king's position after move
+    let king = match sim.iter().find(|p| p.color == mover.color && p.piece_type == PieceType::King) {
+        Some(k) => (k.x, k.y),
+        None    => return false,
+    };
+
+    // Check if any opponent piece attacks the king
+    sim.iter()
+        .filter(|p| p.color != mover.color)
+        .any(|attacker| attacker.is_move_valid(king, sim.clone()))
+}
+
+fn compute_valid_moves_for_piece(piece: &Piece, pieces_vec: &[Piece]) -> Vec<(u8, u8)> {
+    (0u8..8)
+        .flat_map(|x| (0u8..8).map(move |y| (x, y)))
+        .filter(|&pos| {
+            piece.is_move_valid(pos, pieces_vec.to_vec())
+                && !would_leave_king_in_check(piece, pos, pieces_vec)
+        })
+        .collect()
+}
+
 fn select_piece(
     selected_square:    Res<SelectedSquare>,
     mut selected_piece: ResMut<SelectedPiece>,
@@ -175,6 +227,7 @@ fn select_piece(
     turn:               Res<PlayerTurn>,
     squares_query:      Query<&Square>,
     pieces_query:       Query<(Entity, &Piece)>,
+    game_config:        Res<GameConfig>,
 ) {
     if !selected_square.is_changed() { return; }
     let square_entity = match selected_square.entity {
@@ -186,12 +239,31 @@ fn select_piece(
     if selected_piece.entity.is_none() {
         for (piece_entity, piece) in pieces_query.iter() {
             if piece.x == square.x && piece.y == square.y && piece.color == turn.0 {
-                selected_piece.entity = Some(piece_entity);
+                // In PvC/PvL, only the human player's color can be selected
+                let human_can_select = match game_config.mode {
+                    GameMode::PvP => true,
+                    GameMode::PvC | GameMode::PvL => piece.color == game_config.player_side,
+                };
+                if !human_can_select { break; }
                 let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
-                valid_moves.0 = (0u8..8)
-                    .flat_map(|x| (0u8..8).map(move |y| (x, y)))
-                    .filter(|&pos| piece.is_move_valid(pos, pieces_vec.clone()))
-                    .collect();
+                selected_piece.entity = Some(piece_entity);
+                valid_moves.0 = compute_valid_moves_for_piece(piece, &pieces_vec);
+                break;
+            }
+        }
+    } else {
+        // Piece already selected — check if clicking a different own piece to re-select
+        for (piece_entity, piece) in pieces_query.iter() {
+            if piece.x == square.x && piece.y == square.y && piece.color == turn.0 {
+                let human_can_select = match game_config.mode {
+                    GameMode::PvP => true,
+                    GameMode::PvC | GameMode::PvL => piece.color == game_config.player_side,
+                };
+                if !human_can_select { break; }
+                if selected_piece.entity == Some(piece_entity) { break; } // same piece, no-op
+                let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
+                selected_piece.entity = Some(piece_entity);
+                valid_moves.0 = compute_valid_moves_for_piece(piece, &pieces_vec);
                 break;
             }
         }
@@ -200,7 +272,7 @@ fn select_piece(
 
 fn move_piece(
     mut commands:       Commands,
-    selected_square:    Res<SelectedSquare>,
+    mut selected_square: ResMut<SelectedSquare>,
     selected_piece:     Res<SelectedPiece>,
     mut turn:           ResMut<PlayerTurn>,
     mut castling_state: ResMut<CastlingState>,
@@ -230,12 +302,20 @@ fn move_piece(
     let pieces_entity_vec: Vec<(Entity, Piece)> = pieces_query.iter().map(|(e, p)| (e, *p)).collect();
 
     if let Ok((_, mut piece)) = pieces_query.get_mut(selected_piece_entity) {
-        if piece.is_move_valid((square_x, square_y), pieces_vec) {
+        // Re-clicking the selected piece — do nothing
+        if piece.x == square_x && piece.y == square_y {
+            return;
+        }
+        if piece.is_move_valid((square_x, square_y), pieces_vec.clone())
+            && !would_leave_king_in_check(&piece, (square_x, square_y), &pieces_vec)
+        {
             // Capture
+            let mut just_captured: Option<Entity> = None;
             for (other_entity, other_piece) in &pieces_entity_vec {
                 if other_piece.x == square_x && other_piece.y == square_y && other_piece.color != piece.color {
                     captured.add(other_piece);
                     commands.entity(*other_entity).insert(Taken);
+                    just_captured = Some(*other_entity);
                 }
             }
 
@@ -285,25 +365,44 @@ fn move_piece(
             turn.change();
 
             // Check / checkmate / stalemate detection via engine
-            let all_pieces: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
-            let fen = build_fen(&all_pieces, turn.0, &castling_state);
-            if let Ok(pos) = Position::from_fen(&fen) {
-                if pos.is_checkmate() {
-                    let winner = match turn.0 {
-                        PieceColor::White => PieceColor::Black,
-                        PieceColor::Black => PieceColor::White,
-                    };
-                    status_event.send(GameStatusEvent(GameStatus::Checkmate { winner }));
-                } else if pos.is_stalemate() {
-                    status_event.send(GameStatusEvent(GameStatus::Stalemate));
-                } else if pos.is_in_check() {
-                    status_event.send(GameStatusEvent(GameStatus::Check));
+            let all_pieces: Vec<Piece> = pieces_query.iter()
+                .filter(|(e, _)| Some(*e) != just_captured)
+                .map(|(_, p)| *p)
+                .collect();
+
+            // Guard: don't call engine if any pawn is at an invalid rank (would cause panic)
+            let pawns_valid = all_pieces.iter().all(|p| {
+                p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
+            });
+            if pawns_valid {
+                let fen = build_fen(&all_pieces, turn.0, &castling_state);
+                if let Ok(pos) = Position::from_fen(&fen) {
+                    if pos.is_checkmate() {
+                        let winner = match turn.0 {
+                            PieceColor::White => PieceColor::Black,
+                            PieceColor::Black => PieceColor::White,
+                        };
+                        status_event.send(GameStatusEvent(GameStatus::Checkmate { winner }));
+                    } else if pos.is_stalemate() {
+                        status_event.send(GameStatusEvent(GameStatus::Stalemate));
+                    } else if pos.is_in_check() {
+                        status_event.send(GameStatusEvent(GameStatus::Check));
+                    } else {
+                        status_event.send(GameStatusEvent(GameStatus::Ok));
+                    }
                 }
+            } else {
+                status_event.send(GameStatusEvent(GameStatus::Ok));
             }
         } else {
             // Bad move: flash destination square red for 0.5s
             if let Some((sq_entity, _)) = squares_query.iter().find(|(_, s)| s.x == square_x && s.y == square_y) {
                 commands.entity(sq_entity).insert(BadMoveFlash(Timer::from_seconds(0.5, TimerMode::Once)));
+            }
+            // Restore selected_square to point back to the piece's own square so it
+            // shows as selected (green) rather than the bad destination after the flash.
+            if let Some((piece_sq_entity, _)) = squares_query.iter().find(|(_, s)| s.x == piece.x && s.y == piece.y) {
+                selected_square.entity = Some(piece_sq_entity);
             }
             return;  // keep selection, don't reset
         }

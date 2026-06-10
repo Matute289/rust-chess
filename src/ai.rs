@@ -8,8 +8,22 @@ use chess_engine::{
 
 // ─── Resources ───────────────────────────────────────────────────────────────
 
+/// AI execution phase. Drives the three-step pipeline:
+///   Idle → WaitBeforeThink (timer) → Ready(mv) → Idle
+/// The wait phase lets the player's piece animation render before the blocking search.
 #[derive(Resource, Default)]
-pub struct AiMovePending(pub Option<chess_engine::Move>);
+pub enum AiPhase {
+    #[default]
+    Idle,
+    WaitBeforeThink(Timer),
+    Ready(chess_engine::Move),
+}
+
+impl AiPhase {
+    pub fn is_thinking(&self) -> bool {
+        !matches!(self, AiPhase::Idle)
+    }
+}
 
 #[derive(Resource, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Difficulty {
@@ -49,6 +63,18 @@ impl Difficulty {
             Difficulty::Medio        => DifficultyConfig { max_depth: 5, max_nodes: 2_000_000, random_factor: 0.00 },
             Difficulty::Dificil      => DifficultyConfig { max_depth: 7, max_nodes: 3_000_000, random_factor: 0.00 },
             Difficulty::Pro          => DifficultyConfig { max_depth: 64,max_nodes: 5_000_000, random_factor: 0.00 },
+        }
+    }
+
+    /// Minimum seconds to wait before starting the search. Lets the player's
+    /// piece animation play. Easy levels use a longer delay to look "thoughtful".
+    pub fn min_pre_delay_secs(self) -> f32 {
+        match self {
+            Difficulty::Principiante => 0.8,
+            Difficulty::Facil        => 0.7,
+            Difficulty::Medio        => 0.5,
+            Difficulty::Dificil      => 0.3,
+            Difficulty::Pro          => 0.3,
         }
     }
 }
@@ -95,54 +121,97 @@ fn sync_difficulty_from_config(config: Res<GameConfig>, mut difficulty: ResMut<D
     *difficulty = config.difficulty;
 }
 
-fn reset_ai_state(mut pending: ResMut<AiMovePending>) {
-    *pending = AiMovePending::default();
+fn reset_ai_state(mut phase: ResMut<AiPhase>) {
+    *phase = AiPhase::Idle;
 }
 
-fn ai_turn_trigger(
+/// Step 1: When the player moves and it becomes the AI's turn, start the
+/// pre-think wait timer. The delay lets the player's piece animation run
+/// before the blocking engine search freezes the render loop.
+fn ai_schedule_think(
     turn: Res<PlayerTurn>,
-    castling_state: Res<CastlingState>,
     difficulty: Res<Difficulty>,
-    pieces_query: Query<&Piece>,
-    mut pending_mut: ResMut<AiMovePending>,
+    mut phase: ResMut<AiPhase>,
     game_config: Res<GameConfig>,
 ) {
     if game_config.mode == GameMode::PvP { return; }
+    if !matches!(*phase, AiPhase::Idle) { return; }
     if !turn.is_changed() { return; }
-    if turn.0 != PieceColor::Black { return; }
-    if pending_mut.0.is_some() { return; }
+
+    let ai_color = match game_config.player_side {
+        PieceColor::White => PieceColor::Black,
+        PieceColor::Black => PieceColor::White,
+    };
+    if turn.0 != ai_color { return; }
+
+    let delay = difficulty.min_pre_delay_secs();
+    *phase = AiPhase::WaitBeforeThink(Timer::from_seconds(delay, TimerMode::Once));
+}
+
+/// Step 2: Tick the wait timer. When it expires, run the (blocking) engine
+/// search and store the result. This frame will stutter on hard/pro because
+/// the search blocks; that is unavoidable in single-threaded WASM.
+fn ai_tick_and_compute(
+    time: Res<Time>,
+    mut phase: ResMut<AiPhase>,
+    castling_state: Res<CastlingState>,
+    difficulty: Res<Difficulty>,
+    pieces_query: Query<&Piece>,
+    game_config: Res<GameConfig>,
+) {
+    let timer_done = match &mut *phase {
+        AiPhase::WaitBeforeThink(timer) => {
+            timer.tick(time.delta());
+            timer.finished()
+        }
+        _ => return,
+    };
+    if !timer_done { return; }
+
+    let ai_color = match game_config.player_side {
+        PieceColor::White => PieceColor::Black,
+        PieceColor::Black => PieceColor::White,
+    };
 
     let pieces: Vec<Piece> = pieces_query.iter().copied().collect();
-    let fen = build_fen(&pieces, PieceColor::Black, &castling_state);
+    let fen = build_fen(&pieces, ai_color, &castling_state);
 
     let pos = match Position::from_fen(&fen) {
         Ok(p)  => p,
-        Err(e) => { eprintln!("AI: invalid FEN '{}': {}", fen, e); return; }
+        Err(e) => { eprintln!("AI: invalid FEN '{}': {}", fen, e); *phase = AiPhase::Idle; return; }
     };
 
     let mut search = Search::new();
-    if let SearchResult::EngineMove(mv, score) = search.best_move(&pos, &difficulty.config()) {
-        eprintln!("AI: {} (score {})", mv.to_uci(), score);
-        pending_mut.0 = Some(mv);
+    match search.best_move(&pos, &difficulty.config()) {
+        SearchResult::EngineMove(mv, score) => {
+            eprintln!("AI: {} (score {})", mv.to_uci(), score);
+            *phase = AiPhase::Ready(mv);
+        }
+        _ => { *phase = AiPhase::Idle; }
     }
 }
 
+/// Step 3: Apply the computed move and advance the turn.
 fn ai_apply_move(
     mut commands: Commands,
-    mut pending: ResMut<AiMovePending>,
+    mut phase: ResMut<AiPhase>,
     mut turn_mut: ResMut<PlayerTurn>,
     mut castling_state: ResMut<CastlingState>,
     mut pieces_query: Query<(Entity, &mut Piece)>,
+    mut captured: ResMut<crate::captured::CapturedPieces>,
     mut status_ev: EventWriter<GameStatusEvent>,
+    game_config: Res<GameConfig>,
 ) {
-    // Only apply on the frame AFTER the trigger (turn is no longer "just changed")
-    if turn_mut.is_changed() { return; }
-    if turn_mut.0 != PieceColor::Black { return; }
-
-    let mv = match pending.0.take() {
-        Some(m) => m,
-        None    => return,
+    let mv = match &*phase {
+        AiPhase::Ready(mv) => *mv,
+        _ => return,
     };
+
+    let ai_color = match game_config.player_side {
+        PieceColor::White => PieceColor::Black,
+        PieceColor::Black => PieceColor::White,
+    };
+    let player_color = game_config.player_side;
 
     let from = mv.from_sq();
     let to   = mv.to_sq();
@@ -151,83 +220,96 @@ fn ai_apply_move(
     let from_bevy = (from.rank(), from.file());
     let to_bevy   = (to.rank(),   to.file());
 
-    // Snapshot all pieces to avoid borrow conflicts during mutation
     let all: Vec<(Entity, Piece)> = pieces_query.iter().map(|(e, p)| (e, *p)).collect();
 
-    // Find moving piece entity (must be Black)
     let moving_entity = match all.iter()
-        .find(|(_, p)| p.x == from_bevy.0 && p.y == from_bevy.1 && p.color == PieceColor::Black)
+        .find(|(_, p)| p.x == from_bevy.0 && p.y == from_bevy.1 && p.color == ai_color)
         .map(|(e, _)| *e)
     {
         Some(e) => e,
         None => {
-            eprintln!("AI: no Black piece at ({}, {})", from_bevy.0, from_bevy.1);
+            eprintln!("AI: no piece at ({}, {})", from_bevy.0, from_bevy.1);
+            *phase = AiPhase::Idle;
             return;
         }
     };
 
-    // Handle standard capture
+    let mut just_captured_entity: Option<Entity> = None;
+
     let is_capture = matches!(flag,
         MoveFlag::Capture | MoveFlag::PromoKnightCapture | MoveFlag::PromoBishopCapture |
         MoveFlag::PromoRookCapture | MoveFlag::PromoQueenCapture
     );
     if is_capture {
-        if let Some((captured_entity, _)) = all.iter()
-            .find(|(_, p)| p.x == to_bevy.0 && p.y == to_bevy.1 && p.color == PieceColor::White)
+        if let Some((captured_entity, captured_piece)) = all.iter()
+            .find(|(_, p)| p.x == to_bevy.0 && p.y == to_bevy.1 && p.color == player_color)
         {
+            captured.add(captured_piece);
             commands.entity(*captured_entity).insert(Taken);
+            just_captured_entity = Some(*captured_entity);
         }
     }
 
-    // Handle en passant: captured pawn is one rank above destination (black captures white pawn)
     if flag == MoveFlag::EnPassant {
-        let ep_rank = to_bevy.0 + 1;
-        if let Some((ep_entity, _)) = all.iter()
-            .find(|(_, p)| p.x == ep_rank && p.y == to_bevy.1 && p.color == PieceColor::White)
+        let ep_rank = if ai_color == PieceColor::Black {
+            to_bevy.0.saturating_add(1)
+        } else {
+            to_bevy.0.saturating_sub(1)
+        };
+        if let Some((ep_entity, ep_piece)) = all.iter()
+            .find(|(_, p)| p.x == ep_rank && p.y == to_bevy.1 && p.color == player_color)
         {
+            captured.add(ep_piece);
             commands.entity(*ep_entity).insert(Taken);
+            just_captured_entity = just_captured_entity.or(Some(*ep_entity));
         }
     }
 
-    // Handle castling: also move the rook
+    let castling_rank = if ai_color == PieceColor::Black { 7u8 } else { 0u8 };
     if flag == MoveFlag::KingSideCastle {
-        // Black king-side: rook h8(7,7) → f8(7,5)
         if let Some((rook_e, _)) = all.iter()
-            .find(|(_, p)| p.x == 7 && p.y == 7 && p.color == PieceColor::Black && p.piece_type == PieceType::Rook)
+            .find(|(_, p)| p.x == castling_rank && p.y == 7 && p.color == ai_color && p.piece_type == PieceType::Rook)
         {
             if let Ok((_, mut rook)) = pieces_query.get_mut(*rook_e) {
-                rook.x = 7;
+                rook.x = castling_rank;
                 rook.y = 5;
             }
         }
     }
     if flag == MoveFlag::QueenSideCastle {
-        // Black queen-side: rook a8(7,0) → d8(7,3)
         if let Some((rook_e, _)) = all.iter()
-            .find(|(_, p)| p.x == 7 && p.y == 0 && p.color == PieceColor::Black && p.piece_type == PieceType::Rook)
+            .find(|(_, p)| p.x == castling_rank && p.y == 0 && p.color == ai_color && p.piece_type == PieceType::Rook)
         {
             if let Ok((_, mut rook)) = pieces_query.get_mut(*rook_e) {
-                rook.x = 7;
+                rook.x = castling_rank;
                 rook.y = 3;
             }
         }
     }
 
-    // Move the piece and handle promotion
     if let Ok((_, mut piece)) = pieces_query.get_mut(moving_entity) {
         piece.x = to_bevy.0;
         piece.y = to_bevy.1;
 
-        // Strip castling rights for Black when king or rook moves
         match piece.piece_type {
             PieceType::King => {
-                castling_state.black_kingside  = false;
-                castling_state.black_queenside = false;
+                if ai_color == PieceColor::Black {
+                    castling_state.black_kingside  = false;
+                    castling_state.black_queenside = false;
+                } else {
+                    castling_state.white_kingside  = false;
+                    castling_state.white_queenside = false;
+                }
             }
             PieceType::Rook => {
                 let origin_file = from_bevy.1;
-                if origin_file == 7 { castling_state.black_kingside  = false; }
-                if origin_file == 0 { castling_state.black_queenside = false; }
+                if ai_color == PieceColor::Black {
+                    if origin_file == 7 { castling_state.black_kingside  = false; }
+                    if origin_file == 0 { castling_state.black_queenside = false; }
+                } else {
+                    if origin_file == 7 { castling_state.white_kingside  = false; }
+                    if origin_file == 0 { castling_state.white_queenside = false; }
+                }
             }
             _ => {}
         }
@@ -247,23 +329,36 @@ fn ai_apply_move(
         }
     }
 
+    *phase = AiPhase::Idle;
     turn_mut.change();
 
-    // Check/checkmate/stalemate detection after AI move
-    let all_pieces: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
-    let fen = build_fen(&all_pieces, turn_mut.0, &castling_state);
-    if let Ok(pos) = Position::from_fen(&fen) {
-        if pos.is_checkmate() {
-            let winner = match turn_mut.0 {
-                PieceColor::White => PieceColor::Black,
-                PieceColor::Black => PieceColor::White,
-            };
-            status_ev.send(GameStatusEvent(GameStatus::Checkmate { winner }));
-        } else if pos.is_stalemate() {
-            status_ev.send(GameStatusEvent(GameStatus::Stalemate));
-        } else if pos.is_in_check() {
-            status_ev.send(GameStatusEvent(GameStatus::Check));
+    let all_pieces: Vec<Piece> = pieces_query.iter()
+        .filter(|(e, _)| Some(*e) != just_captured_entity)
+        .map(|(_, p)| *p)
+        .collect();
+
+    let pawns_valid = all_pieces.iter().all(|p| {
+        p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
+    });
+    if pawns_valid {
+        let fen = build_fen(&all_pieces, turn_mut.0, &castling_state);
+        if let Ok(pos) = Position::from_fen(&fen) {
+            if pos.is_checkmate() {
+                let winner = match turn_mut.0 {
+                    PieceColor::White => PieceColor::Black,
+                    PieceColor::Black => PieceColor::White,
+                };
+                status_ev.send(GameStatusEvent(GameStatus::Checkmate { winner }));
+            } else if pos.is_stalemate() {
+                status_ev.send(GameStatusEvent(GameStatus::Stalemate));
+            } else if pos.is_in_check() {
+                status_ev.send(GameStatusEvent(GameStatus::Check));
+            } else {
+                status_ev.send(GameStatusEvent(GameStatus::Ok));
+            }
         }
+    } else {
+        status_ev.send(GameStatusEvent(GameStatus::Ok));
     }
 }
 
@@ -274,12 +369,13 @@ pub struct AIPlugin;
 impl Plugin for AIPlugin {
     fn build(&self, app: &mut App) {
         app
-            .init_resource::<AiMovePending>()
+            .init_resource::<AiPhase>()
             .init_resource::<Difficulty>()
             .add_systems(OnEnter(AppState::Playing), sync_difficulty_from_config)
             .add_systems(OnEnter(AppState::Playing), reset_ai_state)
-            .add_systems(Update, (ai_turn_trigger, ai_apply_move).chain()
-                .run_if(in_state(AppState::Playing)));
+            .add_systems(Update,
+                (ai_schedule_think, ai_tick_and_compute, ai_apply_move).chain()
+                    .run_if(in_state(AppState::Playing)));
     }
 }
 
@@ -327,5 +423,13 @@ mod tests {
                                        black_kingside: false, black_queenside: false };
         let fen = build_fen(&pieces, PieceColor::Black, &castling);
         assert!(fen.starts_with("4k3/8/8/8/8/8/8/4K3 b -"));
+    }
+
+    #[test]
+    fn difficulty_min_delays_are_positive() {
+        for d in [Difficulty::Principiante, Difficulty::Facil, Difficulty::Medio,
+                  Difficulty::Dificil, Difficulty::Pro] {
+            assert!(d.min_pre_delay_secs() > 0.0);
+        }
     }
 }

@@ -3,6 +3,13 @@ import init from './pkg/bevy_chess.js';
 const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 let isPaused = false;
 
+window.show_game_controls = () => {
+  document.getElementById('esc-hint').style.display = 'block';
+};
+window.hide_game_controls = () => {
+  document.getElementById('esc-hint').style.display = 'none';
+};
+
 function fitCanvas() {
   const canvas = document.getElementById('canvas');
   if (!canvas.offsetWidth) return;
@@ -17,16 +24,13 @@ window.togglePause = function () {
   isPaused = !isPaused;
   const overlay = document.getElementById('pause-overlay');
   const canvas  = document.getElementById('canvas');
-  const btn     = document.getElementById('btn-pause');
 
   if (isPaused) {
     overlay.style.display = 'flex';
     canvas.style.pointerEvents = 'none';
-    btn.textContent = '▶ Reanudar';
   } else {
     overlay.style.display = 'none';
     canvas.style.pointerEvents = 'auto';
-    btn.textContent = '⏸ Pausa';
   }
 };
 

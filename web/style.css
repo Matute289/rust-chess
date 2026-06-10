@@ -26,41 +26,20 @@ body {
   touch-action: none;
 }
 
-/* Game control buttons */
-#game-controls {
+/* Keyboard hint — shown only during Playing state */
+#esc-hint {
+  display: none;
   position: fixed;
-  top: 12px;
-  right: 12px;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 50;
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-}
-
-@media (orientation: portrait) {
-  #game-controls {
-    flex-direction: column;
-    align-items: flex-end;
-  }
-}
-
-.game-btn {
-  background: rgba(26, 26, 46, 0.88);
-  color: #ddd;
-  border: 1px solid #555;
-  border-radius: 6px;
-  padding: 6px 14px;
   font-family: monospace;
   font-size: 13px;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  transition: background 0.15s, color 0.15s;
+  color: #ffd700;
   letter-spacing: 0.5px;
-}
-.game-btn:hover {
-  background: rgba(70, 70, 110, 0.95);
-  color: #fff;
+  pointer-events: none;
+  opacity: 0.75;
 }
 
 /* Loading overlay */
@@ -140,5 +119,22 @@ body {
 }
 .pause-resume-btn:hover {
   background: #ffe84d;
+}
+
+.pause-new-game-btn {
+  background: rgba(120, 30, 30, 0.9);
+  color: #eee;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 36px;
+  font-family: monospace;
+  font-size: clamp(15px, 4vw, 20px);
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 2px;
+  transition: background 0.15s;
+}
+.pause-new-game-btn:hover {
+  background: rgba(160, 40, 40, 0.95);
 }
 

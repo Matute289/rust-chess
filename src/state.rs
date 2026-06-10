@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use crate::pieces::PieceColor;
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum AppState {
@@ -15,8 +16,19 @@ pub enum GameMode {
     PvL,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct GameConfig {
     pub mode: GameMode,
     pub difficulty: crate::ai::Difficulty,
+    pub player_side: PieceColor,
+}
+
+impl Default for GameConfig {
+    fn default() -> Self {
+        Self {
+            mode: GameMode::default(),
+            difficulty: crate::ai::Difficulty::default(),
+            player_side: PieceColor::White,
+        }
+    }
 }

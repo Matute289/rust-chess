@@ -26,6 +26,25 @@ pub fn wasm_main() {
     run_app();
 }
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = window)]
+    fn show_game_controls();
+    #[wasm_bindgen(js_namespace = window)]
+    fn hide_game_controls();
+}
+
+fn on_enter_playing() {
+    #[cfg(target_arch = "wasm32")]
+    show_game_controls();
+}
+
+fn on_enter_home() {
+    #[cfg(target_arch = "wasm32")]
+    hide_game_controls();
+}
+
 pub fn run_app() {
     App::new()
         .add_plugins(
@@ -48,6 +67,8 @@ pub fn run_app() {
         .init_state::<AppState>()
         .init_resource::<GameConfig>()
         .add_plugins((HomePlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin))
+        .add_systems(OnEnter(AppState::Playing), on_enter_playing)
+        .add_systems(OnEnter(AppState::Home),    on_enter_home)
         .add_systems(Startup, setup)
         .run();
 }

@@ -9,6 +9,7 @@ pub enum HomeScreen {
     #[default]
     ModeSelect,
     LoginPrompt,
+    ColorSelect,
     DifficultySelect,
 }
 
@@ -21,6 +22,8 @@ pub enum HomeScreen {
 #[derive(Component)] struct BtnDifficulty(pub Difficulty);
 #[derive(Component)] struct BtnOAuth(pub &'static str); // "Google", "Apple", "GitHub", "Discord"
 #[derive(Component)] struct BtnBack;
+#[derive(Component)] struct BtnSideWhite;
+#[derive(Component)] struct BtnSideBlack;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -132,6 +135,17 @@ fn build_home_root(commands: &mut Commands, asset_server: &AssetServer, screen: 
                     spacer(root, 16.0);
                     make_btn(root, font.clone(), "← Volver", BtnBack);
                 }
+                HomeScreen::ColorSelect => {
+                    root.spawn(TextBundle::from_section(
+                        "¿Con qué color jugás?",
+                        TextStyle { font: font.clone(), font_size: 36.0, color: Color::rgb(0.7, 0.7, 0.85) },
+                    ));
+                    spacer(root, 24.0);
+                    make_btn(root, font.clone(), "Blancas", BtnSideWhite);
+                    make_btn(root, font.clone(), "Negras",  BtnSideBlack);
+                    spacer(root, 12.0);
+                    make_btn(root, font.clone(), "← Volver", BtnBack);
+                }
                 HomeScreen::DifficultySelect => {
                     root.spawn(TextBundle::from_section(
                         "Elegí la dificultad",
@@ -208,8 +222,8 @@ fn handle_pvc(
     for i in &q {
         if *i == Interaction::Pressed {
             config.mode = GameMode::PvC;
-            *home_screen = HomeScreen::DifficultySelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect);
+            *home_screen = HomeScreen::ColorSelect;
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ColorSelect);
         }
     }
 }
@@ -243,6 +257,33 @@ fn handle_oauth(
     for (i, _btn) in &q {
         if *i == Interaction::Pressed {
             // Stub: treat any provider click as successful login
+            *home_screen = HomeScreen::ColorSelect;
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ColorSelect);
+        }
+    }
+}
+
+// ─── Color select ────────────────────────────────────────────────────────────
+
+fn handle_color_select(
+    white_q: Query<&Interaction, (Changed<Interaction>, With<BtnSideWhite>)>,
+    black_q: Query<&Interaction, (Changed<Interaction>, With<BtnSideBlack>)>,
+    mut config: ResMut<GameConfig>,
+    mut home_screen: ResMut<HomeScreen>,
+    mut commands: Commands,
+    root_q: Query<Entity, With<HomeRoot>>,
+    asset_server: Res<AssetServer>,
+) {
+    for i in &white_q {
+        if *i == Interaction::Pressed {
+            config.player_side = crate::pieces::PieceColor::White;
+            *home_screen = HomeScreen::DifficultySelect;
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect);
+        }
+    }
+    for i in &black_q {
+        if *i == Interaction::Pressed {
+            config.player_side = crate::pieces::PieceColor::Black;
             *home_screen = HomeScreen::DifficultySelect;
             rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect);
         }
@@ -303,6 +344,7 @@ impl Plugin for HomePlugin {
                 handle_pvc,
                 handle_pvl,
                 handle_oauth,
+                handle_color_select,
                 handle_difficulty,
                 handle_back,
             ).run_if(in_state(AppState::Home)));
