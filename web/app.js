@@ -4,10 +4,15 @@ const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 let isPaused = false;
 
 window.show_game_controls = () => {
-  document.getElementById('esc-hint').style.display = 'block';
+  if (isTouchDevice) {
+    document.getElementById('menu-btn').style.display = 'block';
+  } else {
+    document.getElementById('esc-hint').style.display = 'block';
+  }
 };
 window.hide_game_controls = () => {
   document.getElementById('esc-hint').style.display = 'none';
+  document.getElementById('menu-btn').style.display = 'none';
 };
 
 function fitCanvas() {

@@ -26,7 +26,7 @@ body {
   touch-action: none;
 }
 
-/* Keyboard hint — shown only during Playing state */
+/* Keyboard hint (desktop) — shown only during Playing state */
 #esc-hint {
   display: none;
   position: fixed;
@@ -40,6 +40,28 @@ body {
   letter-spacing: 0.5px;
   pointer-events: none;
   opacity: 0.75;
+}
+
+/* Menu button (touch devices) — shown only during Playing state */
+#menu-btn {
+  display: none;
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  background: rgba(26, 26, 46, 0.88);
+  color: #ffd700;
+  border: 1px solid #ffd70066;
+  border-radius: 20px;
+  padding: 8px 24px;
+  font-family: monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 /* Loading overlay */
