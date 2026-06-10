@@ -571,3 +571,41 @@ impl Plugin for BoardPlugin {
             );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::legal_squares_for;
+
+    #[test]
+    fn king_cannot_move_into_check() {
+        // White king e1 (rank 0 file 4), Black rook e8 (rank 7 file 4)
+        // King can't step to e2 because that's still on the e-file covered by Re8
+        let fen = "4r3/8/8/8/8/8/8/4K3 w - - 0 1";
+        let squares = legal_squares_for(fen, 0, 4);
+        assert!(
+            !squares.contains(&(1, 4)),
+            "king must not move to e2 (covered by Re8), got {:?}", squares
+        );
+    }
+
+    #[test]
+    fn pinned_rook_cannot_leave_file() {
+        // White: King e1, Rook e4. Black: Rook e8.
+        // Re4 is absolutely pinned — it can only move along the e-file.
+        let fen = "4r3/8/8/8/4R3/8/8/4K3 w - - 0 1";
+        let squares = legal_squares_for(fen, 3, 4); // Re4 = rank 3, file 4
+        assert!(!squares.is_empty(), "pinned rook should have moves along the pin line");
+        for &(_, f) in &squares {
+            assert_eq!(f, 4, "pinned rook must stay on e-file, got dest file {}", f);
+        }
+    }
+
+    #[test]
+    fn starting_knight_g1_has_two_moves() {
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let squares = legal_squares_for(fen, 0, 6); // Ng1
+        assert!(squares.contains(&(2, 5)), "Ng1-f3 should be legal");   // f3 = rank 2, file 5
+        assert!(squares.contains(&(2, 7)), "Ng1-h3 should be legal");   // h3 = rank 2, file 7
+        assert_eq!(squares.len(), 2, "Ng1 has exactly 2 legal moves from start");
+    }
+}
