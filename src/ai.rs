@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::board::{CastlingState, GameStatus, GameStatusEvent, PlayerTurn, Taken};
+use crate::board::{CastlingState, GameHistory, GameStatus, GameStatusEvent, PlayerTurn, Taken};
 use crate::pieces::{Piece, PieceColor, PieceType};
 use crate::state::{AppState, GameConfig, GameMode};
 use chess_engine::{
@@ -201,11 +201,14 @@ fn ai_apply_move(
     mut captured: ResMut<crate::captured::CapturedPieces>,
     mut status_ev: EventWriter<GameStatusEvent>,
     game_config: Res<GameConfig>,
+    mut history: ResMut<GameHistory>,
 ) {
     let mv = match &*phase {
         AiPhase::Ready(mv) => *mv,
         _ => return,
     };
+
+    history.moves.push(mv);
 
     let ai_color = match game_config.player_side {
         PieceColor::White => PieceColor::Black,
