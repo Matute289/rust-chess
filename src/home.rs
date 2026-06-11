@@ -267,7 +267,7 @@ fn build_home_root(
 
                     spacer(root, 20.0);
                     make_btn(root, font.clone(), "Sin reloj", BtnNoTimer);
-                    make_btn(root, font.clone(), "▶  Jugar",  BtnPlay);
+                    make_btn(root, font.clone(), "Jugar",     BtnPlay);
                     spacer(root, 8.0);
                     make_btn(root, font.clone(), "← Volver",  BtnBack);
                 }
