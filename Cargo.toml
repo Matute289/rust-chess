@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "chess-engine"]
+members = [".", "chess-engine", "chess-server"]
 resolver = "2"
 
 [package]
