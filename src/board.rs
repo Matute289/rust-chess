@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
+use std::collections::HashMap;
 use crate::ai::{build_fen, build_fen_ep};
 use crate::captured::{CapturedPieces, PromotionPending};
 use crate::pieces::{Piece, PieceColor, PieceType};
@@ -49,6 +50,34 @@ impl CastlingPending {
 
 #[derive(Resource, Default)]
 pub struct EnPassantTarget(pub Option<(u8, u8)>);
+
+#[derive(Resource, Default)]
+pub struct DrawTracking {
+    pub halfmove_clock:   u32,
+    pub position_history: HashMap<String, u8>,
+}
+
+impl DrawTracking {
+    pub fn reset(&mut self) {
+        self.halfmove_clock = 0;
+        self.position_history.clear();
+    }
+
+    pub fn record_position(&mut self, key: String) -> bool {
+        let count = self.position_history.entry(key).or_insert(0);
+        *count += 1;
+        self.halfmove_clock >= 100 || *count >= 3
+    }
+}
+
+fn position_key(pieces: &[Piece], side: PieceColor, castling: &CastlingState, ep: Option<(u8, u8)>) -> String {
+    let fen = build_fen_ep(pieces, side, castling, ep);
+    fen.split(' ').take(4).collect::<Vec<_>>().join(" ")
+}
+
+pub fn position_key_pub(pieces: &[Piece], side: PieceColor, castling: &CastlingState, ep: Option<(u8, u8)>) -> String {
+    position_key(pieces, side, castling, ep)
+}
 
 #[derive(Event, Clone)]
 pub struct GameStatusEvent(pub GameStatus);
@@ -329,13 +358,14 @@ fn move_piece(
     mut captured:       ResMut<CapturedPieces>,
     mut promotion:      ResMut<PromotionPending>,
     mut pending_castle: ResMut<CastlingPending>,
-    mut en_passant:     ResMut<EnPassantTarget>,
-    mut valid_moves:    ResMut<ValidMoveSquares>,
-    mut history:        ResMut<GameHistory>,
-    squares_query:      Query<(Entity, &Square)>,
-    mut pieces_query:   Query<(Entity, &mut Piece)>,
-    mut reset_event:    EventWriter<ResetSelectedEvent>,
-    mut status_event:   EventWriter<GameStatusEvent>,
+    mut en_passant:        ResMut<EnPassantTarget>,
+    mut valid_moves:       ResMut<ValidMoveSquares>,
+    mut history:           ResMut<GameHistory>,
+    mut draw_state:        ResMut<DrawTracking>,
+    squares_query:         Query<(Entity, &Square)>,
+    mut pieces_query:      Query<(Entity, &mut Piece)>,
+    mut reset_event:       EventWriter<ResetSelectedEvent>,
+    mut status_event:      EventWriter<GameStatusEvent>,
 ) {
     if !selected_square.is_changed() { return; }
     if promotion.is_pending() { return; }
@@ -438,6 +468,13 @@ fn move_piece(
                 None
             };
 
+            // Halfmove clock: reset on pawn move or capture, increment otherwise.
+            if piece_type == PieceType::Pawn || just_captured.is_some() {
+                draw_state.halfmove_clock = 0;
+            } else {
+                draw_state.halfmove_clock += 1;
+            }
+
             // Castling: teleport the rook to its post-castling square.
             // pieces_entity_vec is a pre-move snapshot so the rook is still at its origin file.
             drop(piece);  // Release the mutable borrow on the king temporarily
@@ -512,6 +549,10 @@ fn move_piece(
                     .map(|(_, p)| *p)
                     .collect();
 
+                // Record position for threefold-repetition and 50-move tracking.
+                let pos_key = position_key(&all_pieces, turn.0, &castling_state, en_passant.0);
+                let is_draw = draw_state.record_position(pos_key);
+
                 // Guard: don't call engine if any pawn is at an invalid rank (would cause panic)
                 let pawns_valid = all_pieces.iter().all(|p| {
                     p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
@@ -525,7 +566,7 @@ fn move_piece(
                                 PieceColor::Black => PieceColor::White,
                             };
                             status_event.send(GameStatusEvent(GameStatus::Checkmate { winner }));
-                        } else if pos.is_stalemate() {
+                        } else if pos.is_stalemate() || is_draw {
                             status_event.send(GameStatusEvent(GameStatus::Stalemate));
                         } else if pos.is_in_check() {
                             status_event.send(GameStatusEvent(GameStatus::Check));
@@ -582,13 +623,14 @@ fn despawn_taken_pieces(
 }
 
 fn reset_board_state(
-    mut turn:            ResMut<PlayerTurn>,
-    mut castling:        ResMut<CastlingState>,
-    mut valid_moves:     ResMut<ValidMoveSquares>,
-    mut selected_square: ResMut<SelectedSquare>,
-    mut selected_piece:  ResMut<SelectedPiece>,
-    mut pending_castle:  ResMut<CastlingPending>,
-    mut en_passant:      ResMut<EnPassantTarget>,
+    mut turn:             ResMut<PlayerTurn>,
+    mut castling:         ResMut<CastlingState>,
+    mut valid_moves:      ResMut<ValidMoveSquares>,
+    mut selected_square:  ResMut<SelectedSquare>,
+    mut selected_piece:   ResMut<SelectedPiece>,
+    mut pending_castle:   ResMut<CastlingPending>,
+    mut en_passant:       ResMut<EnPassantTarget>,
+    mut draw_state:       ResMut<DrawTracking>,
 ) {
     *turn            = PlayerTurn::default();
     *castling        = CastlingState::default();
@@ -597,6 +639,7 @@ fn reset_board_state(
     selected_piece.entity  = None;
     *pending_castle  = CastlingPending::default();
     en_passant.0     = None;
+    draw_state.reset();
 }
 
 fn reset_game_history(mut history: ResMut<GameHistory>) {
@@ -741,12 +784,13 @@ fn execute_pending_castle(
     mut pieces_query:   Query<(Entity, &mut Piece)>,
     mut turn:           ResMut<PlayerTurn>,
     mut castling_state: ResMut<CastlingState>,
-    mut en_passant:     ResMut<EnPassantTarget>,
-    mut history:        ResMut<GameHistory>,
-    mut status_event:   EventWriter<GameStatusEvent>,
-    mut reset_event:    EventWriter<ResetSelectedEvent>,
-    root_q:             Query<Entity, With<CastleConfirmRoot>>,
-    mut commands:       Commands,
+    mut en_passant:       ResMut<EnPassantTarget>,
+    mut history:          ResMut<GameHistory>,
+    mut draw_state:       ResMut<DrawTracking>,
+    mut status_event:     EventWriter<GameStatusEvent>,
+    mut reset_event:      EventWriter<ResetSelectedEvent>,
+    root_q:               Query<Entity, With<CastleConfirmRoot>>,
+    mut commands:         Commands,
 ) {
     let pressed = btn_q.iter().any(|i| *i == Interaction::Pressed);
     if !pressed { return; }
@@ -803,11 +847,16 @@ fn execute_pending_castle(
     }
 
     en_passant.0 = None;
+    draw_state.halfmove_clock += 1; // castling: no capture, no pawn move
 
     turn.change();
 
     // Check / checkmate / stalemate detection
     let all_pieces: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
+
+    let pos_key = position_key(&all_pieces, turn.0, &castling_state, None);
+    let is_draw = draw_state.record_position(pos_key);
+
     let pawns_valid = all_pieces.iter().all(|p| {
         p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
     });
@@ -820,7 +869,7 @@ fn execute_pending_castle(
                     PieceColor::Black => PieceColor::White,
                 };
                 status_event.send(GameStatusEvent(GameStatus::Checkmate { winner }));
-            } else if pos.is_stalemate() {
+            } else if pos.is_stalemate() || is_draw {
                 status_event.send(GameStatusEvent(GameStatus::Stalemate));
             } else if pos.is_in_check() {
                 status_event.send(GameStatusEvent(GameStatus::Check));
@@ -850,6 +899,7 @@ impl Plugin for BoardPlugin {
             .init_resource::<ValidMoveSquares>()
             .init_resource::<CastlingPending>()
             .init_resource::<EnPassantTarget>()
+            .init_resource::<DrawTracking>()
             .init_resource::<GameHistory>()
             .init_resource::<SquareMaterials>()
             .add_event::<ResetSelectedEvent>()

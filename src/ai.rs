@@ -216,7 +216,8 @@ fn ai_apply_move(
     mut status_ev: EventWriter<GameStatusEvent>,
     game_config: Res<GameConfig>,
     mut history: ResMut<GameHistory>,
-    mut en_passant: ResMut<crate::board::EnPassantTarget>,
+    mut en_passant:  ResMut<crate::board::EnPassantTarget>,
+    mut draw_state:  ResMut<crate::board::DrawTracking>,
 ) {
     let mv = match &*phase {
         AiPhase::Ready(mv) => *mv,
@@ -249,6 +250,9 @@ fn ai_apply_move(
             return;
         }
     };
+    let moving_piece_type = all.iter()
+        .find(|(e, _)| *e == moving_entity)
+        .map(|(_, p)| p.piece_type);
 
     history.moves.push(mv);
 
@@ -281,6 +285,14 @@ fn ai_apply_move(
             commands.entity(*ep_entity).insert(Taken);
             just_captured_entity = just_captured_entity.or(Some(*ep_entity));
         }
+    }
+
+    // Halfmove clock: reset on pawn move or any capture (including en passant).
+    let is_any_capture = is_capture || flag == MoveFlag::EnPassant;
+    if moving_piece_type == Some(PieceType::Pawn) || is_any_capture {
+        draw_state.halfmove_clock = 0;
+    } else {
+        draw_state.halfmove_clock += 1;
     }
 
     let castling_rank = if ai_color == PieceColor::Black { 7u8 } else { 0u8 };
@@ -363,6 +375,9 @@ fn ai_apply_move(
         .map(|(_, p)| *p)
         .collect();
 
+    let pos_key = crate::board::position_key_pub(&all_pieces, turn_mut.0, &castling_state, en_passant.0);
+    let is_draw = draw_state.record_position(pos_key);
+
     let pawns_valid = all_pieces.iter().all(|p| {
         p.piece_type != PieceType::Pawn || (p.x > 0 && p.x < 7)
     });
@@ -375,7 +390,7 @@ fn ai_apply_move(
                     PieceColor::Black => PieceColor::White,
                 };
                 status_ev.send(GameStatusEvent(GameStatus::Checkmate { winner }));
-            } else if pos.is_stalemate() {
+            } else if pos.is_stalemate() || is_draw {
                 status_ev.send(GameStatusEvent(GameStatus::Stalemate));
             } else if pos.is_in_check() {
                 status_ev.send(GameStatusEvent(GameStatus::Check));
