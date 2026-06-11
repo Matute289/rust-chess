@@ -1,25 +1,37 @@
 use axum::{
     async_trait,
     extract::FromRequestParts,
-    http::request::Parts,
+    http::{request::Parts, StatusCode},
 };
+use jsonwebtoken::{decode, DecodingKey, Validation};
 use uuid::Uuid;
-
-use crate::error::AppError;
+use crate::{models::JwtClaims, AppState};
 
 pub struct AuthUser {
     pub user_id: Uuid,
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for AuthUser
-where
-    S: Send + Sync,
-{
-    type Rejection = AppError;
+impl FromRequestParts<AppState> for AuthUser {
+    type Rejection = StatusCode;
 
-    async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // Stub: full JWT extraction implemented in Task 4.
-        Err(AppError::Unauthorized)
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        let token = parts.headers
+            .get("Authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .ok_or(StatusCode::UNAUTHORIZED)?;
+
+        let data = decode::<JwtClaims>(
+            token,
+            &DecodingKey::from_secret(state.config.jwt_secret.as_bytes()),
+            &Validation::default(),
+        )
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+        let user_id = Uuid::parse_str(&data.claims.sub)
+            .map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+        Ok(AuthUser { user_id })
     }
 }
