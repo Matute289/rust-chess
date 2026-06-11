@@ -32,5 +32,5 @@ impl From<User> for UserPublic {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
     pub sub: String,
-    pub exp: usize,
+    pub exp: u64,
 }
