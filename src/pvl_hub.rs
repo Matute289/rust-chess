@@ -16,6 +16,17 @@ enum PvLHubScreen {
 }
 
 #[derive(Clone, Default)]
+pub struct RecentGameEntry {
+    pub id:             String,
+    pub result:         String,
+    pub accuracy_white: Option<f32>,
+    pub accuracy_black: Option<f32>,
+    pub blunders:       i32,
+    pub mistakes:       i32,
+    pub inaccuracies:   i32,
+}
+
+#[derive(Clone, Default)]
 pub struct FetchedStats {
     pub wins:               i64,
     pub losses:             i64,
@@ -24,6 +35,7 @@ pub struct FetchedStats {
     pub blunders_total:     i64,
     pub mistakes_total:     i64,
     pub inaccuracies_total: i64,
+    pub recent_games:       Vec<RecentGameEntry>,
 }
 
 #[derive(Resource, Clone)]
@@ -41,6 +53,8 @@ struct LoadedStats(Option<FetchedStats>);
 #[derive(Component)] struct BtnPvLJugar;
 #[derive(Component)] struct BtnPvLBack;
 #[derive(Component)] struct BtnPvLOAuth(pub &'static str);
+#[derive(Component)] pub struct EloTooltipTrigger;
+#[derive(Component)] struct EloTooltipPanel;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +119,92 @@ fn spacer(parent: &mut ChildBuilder, px: f32) {
     });
 }
 
+fn build_table_row(
+    parent: &mut ChildBuilder,
+    font: Handle<Font>,
+    cells: &[(&str, Color)],
+    col_widths: &[f32],
+    font_size: f32,
+) {
+    parent.spawn(NodeBundle {
+        style: Style { flex_direction: FlexDirection::Row, ..default() },
+        ..default()
+    })
+    .with_children(|row| {
+        for ((text, color), &width) in cells.iter().zip(col_widths.iter()) {
+            row.spawn(NodeBundle {
+                style: Style {
+                    width: Val::Px(width),
+                    padding: UiRect { left: Val::Px(4.0), right: Val::Px(4.0), top: Val::Px(3.0), bottom: Val::Px(3.0) },
+                    ..default()
+                },
+                ..default()
+            })
+            .with_children(|cell| {
+                cell.spawn(TextBundle::from_section(
+                    *text,
+                    TextStyle { font: font.clone(), font_size, color: *color },
+                ));
+            });
+        }
+    });
+}
+
+fn build_games_table(parent: &mut ChildBuilder, font: Handle<Font>, games: &[RecentGameEntry]) {
+    if games.is_empty() { return; }
+
+    // Separator
+    parent.spawn(NodeBundle {
+        style: Style {
+            height: Val::Px(1.0),
+            width: Val::Percent(100.0),
+            margin: UiRect { top: Val::Px(6.0), bottom: Val::Px(8.0), ..default() },
+            ..default()
+        },
+        background_color: BackgroundColor(Color::rgba(0.40, 0.40, 0.60, 0.30)),
+        ..default()
+    });
+
+    let col_widths = [100.0f32, 88.0, 88.0, 50.0, 50.0, 58.0];
+    let hc = Color::rgb(0.50, 0.50, 0.68);
+    let header_cells: &[(&str, Color)] = &[
+        ("Partida", hc), ("Resultado", hc), ("Precisión", hc),
+        ("G", hc), ("E", hc), ("I", hc),
+    ];
+    build_table_row(parent, font.clone(), header_cells, &col_widths, 14.0);
+
+    for game in games {
+        let id_short: String = game.id.chars().take(8).collect();
+
+        let (result_text, result_color) = match game.result.as_str() {
+            "win"  => ("Victoria", Color::rgb(0.45, 0.85, 0.50)),
+            "loss" => ("Derrota",  Color::rgb(0.90, 0.42, 0.42)),
+            _      => ("Tablas",   Color::rgb(0.60, 0.60, 0.78)),
+        };
+
+        let avg_acc = match (game.accuracy_white, game.accuracy_black) {
+            (Some(w), Some(b)) => format!("{:.1}%", (w + b) / 2.0),
+            (Some(w), None)    => format!("{:.1}%", w),
+            (None,    Some(b)) => format!("{:.1}%", b),
+            _                  => "-".to_string(),
+        };
+
+        let blunders_s     = game.blunders.to_string();
+        let mistakes_s     = game.mistakes.to_string();
+        let inaccuracies_s = game.inaccuracies.to_string();
+
+        let row_cells: &[(&str, Color)] = &[
+            (id_short.as_str(),     Color::rgb(0.65, 0.65, 0.78)),
+            (result_text,           result_color),
+            (avg_acc.as_str(),      Color::rgb(0.80, 0.80, 0.90)),
+            (blunders_s.as_str(),   Color::rgb(0.90, 0.48, 0.48)),
+            (mistakes_s.as_str(),   Color::rgb(0.88, 0.72, 0.38)),
+            (inaccuracies_s.as_str(), Color::rgb(0.70, 0.70, 0.88)),
+        ];
+        build_table_row(parent, font.clone(), row_cells, &col_widths, 14.0);
+    }
+}
+
 // ─── UI builder ──────────────────────────────────────────────────────────────
 
 fn build_pvl_hub_root(
@@ -146,8 +246,8 @@ fn build_pvl_hub_root(
                         flex_direction: FlexDirection::Column,
                         padding: UiRect::all(Val::Px(24.0)),
                         border: UiRect::all(Val::Px(1.0)),
-                        min_width: Val::Px(480.0),
-                        row_gap: Val::Px(8.0),
+                        min_width: Val::Px(500.0),
+                        row_gap: Val::Px(6.0),
                         margin: UiRect { bottom: Val::Px(8.0), ..default() },
                         ..default()
                     },
@@ -157,10 +257,52 @@ fn build_pvl_hub_root(
                 })
                 .with_children(|card| {
                     let elo = session.elo.unwrap_or(800);
-                    card.spawn(TextBundle::from_section(
-                        format!("ELO: {}", elo),
-                        TextStyle { font: font.clone(), font_size: 34.0, color: Color::rgb(0.95, 0.92, 0.80) },
+
+                    // ELO row with tooltip trigger
+                    card.spawn(NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(10.0),
+                            ..default()
+                        },
+                        ..default()
+                    })
+                    .with_children(|elo_row| {
+                        elo_row.spawn(TextBundle::from_section(
+                            format!("ELO: {}", elo),
+                            TextStyle { font: font.clone(), font_size: 34.0, color: Color::rgb(0.95, 0.92, 0.80) },
+                        ));
+                        // Hoverable (i) tooltip trigger
+                        elo_row.spawn((
+                            ButtonBundle {
+                                style: Style {
+                                    padding: UiRect::all(Val::Px(4.0)),
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::NONE),
+                                border_color: BorderColor(Color::NONE),
+                                ..default()
+                            },
+                            EloTooltipTrigger,
+                        ))
+                        .with_children(|p| {
+                            p.spawn(TextBundle::from_section(
+                                "(i)",
+                                TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgb(0.45, 0.45, 0.70) },
+                            ));
+                        });
+                    });
+
+                    // Tooltip text — always present, transparent when not hovered
+                    card.spawn((
+                        TextBundle::from_section(
+                            "Sistema de puntuación que mide el nivel relativo de cada jugador\n0-999: principiante  ·  1000-1499: intermedio  ·  1500+: avanzado",
+                            TextStyle { font: font.clone(), font_size: 14.0, color: Color::NONE },
+                        ),
+                        EloTooltipPanel,
                     ));
+
                     if let Some(s) = stats {
                         let total = s.wins + s.losses + s.draws;
                         card.spawn(TextBundle::from_section(
@@ -181,6 +323,7 @@ fn build_pvl_hub_root(
                             ),
                             TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(0.80, 0.65, 0.65) },
                         ));
+                        build_games_table(card, font.clone(), &s.recent_games);
                     } else {
                         card.spawn(TextBundle::from_section(
                             "Cargando estadísticas...",
@@ -216,18 +359,6 @@ fn build_pvl_hub_root(
                 make_btn(root, font.clone(), "← Volver", BtnPvLBack);
             }
         });
-}
-
-fn rebuild_pvl_hub(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    root_q: &Query<Entity, With<PvLHubRoot>>,
-    screen: PvLHubScreen,
-    session: &UserSession,
-    stats: &Option<FetchedStats>,
-) {
-    for e in root_q { commands.entity(e).despawn_recursive(); }
-    build_pvl_hub_root(commands, asset_server, screen, session, stats);
 }
 
 // ─── Lifecycle systems ────────────────────────────────────────────────────────
@@ -288,7 +419,10 @@ fn poll_stats_result(
 // ─── Button handlers ─────────────────────────────────────────────────────────
 
 fn highlight_pvl_buttons(
-    mut q: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<Button>)>,
+    mut q: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>, Without<EloTooltipTrigger>),
+    >,
 ) {
     for (i, mut color) in &mut q {
         *color = match i {
@@ -296,6 +430,20 @@ fn highlight_pvl_buttons(
             Interaction::Hovered => BackgroundColor(Color::rgba(0.22, 0.22, 0.45, 0.95)),
             Interaction::None    => BackgroundColor(Color::rgba(0.15, 0.15, 0.28, 0.92)),
         };
+    }
+}
+
+fn handle_elo_tooltip(
+    q: Query<&Interaction, (Changed<Interaction>, With<EloTooltipTrigger>)>,
+    mut tooltip_q: Query<&mut Text, With<EloTooltipPanel>>,
+) {
+    for i in &q {
+        if let Ok(mut text) = tooltip_q.get_single_mut() {
+            text.sections[0].style.color = match i {
+                Interaction::Hovered | Interaction::Pressed => Color::rgba(0.82, 0.82, 0.95, 0.95),
+                Interaction::None => Color::NONE,
+            };
+        }
     }
 }
 
@@ -349,6 +497,17 @@ fn handle_pvl_back(
 #[cfg(target_arch = "wasm32")]
 async fn fetch_stats_async(jwt: String) -> Option<FetchedStats> {
     #[derive(serde::Deserialize)]
+    struct GameRow {
+        id:             String,
+        result:         String,
+        accuracy_white: Option<f32>,
+        accuracy_black: Option<f32>,
+        blunders:       i32,
+        mistakes:       i32,
+        inaccuracies:   i32,
+    }
+
+    #[derive(serde::Deserialize)]
     struct Resp {
         wins:               i64,
         losses:             i64,
@@ -357,6 +516,7 @@ async fn fetch_stats_async(jwt: String) -> Option<FetchedStats> {
         blunders_total:     i64,
         mistakes_total:     i64,
         inaccuracies_total: i64,
+        recent_games:       Vec<GameRow>,
     }
 
     let resp = gloo_net::http::Request::get(
@@ -376,6 +536,15 @@ async fn fetch_stats_async(jwt: String) -> Option<FetchedStats> {
         blunders_total:     r.blunders_total,
         mistakes_total:     r.mistakes_total,
         inaccuracies_total: r.inaccuracies_total,
+        recent_games: r.recent_games.into_iter().map(|g| RecentGameEntry {
+            id:             g.id,
+            result:         g.result,
+            accuracy_white: g.accuracy_white,
+            accuracy_black: g.accuracy_black,
+            blunders:       g.blunders,
+            mistakes:       g.mistakes,
+            inaccuracies:   g.inaccuracies,
+        }).collect(),
     })
 }
 
@@ -393,6 +562,7 @@ impl Plugin for PvLHubPlugin {
             .add_systems(OnExit(AppState::PvLHub),  despawn_pvl_hub)
             .add_systems(Update, (
                 highlight_pvl_buttons,
+                handle_elo_tooltip,
                 poll_stats_result,
                 handle_pvl_jugar,
                 handle_pvl_oauth,

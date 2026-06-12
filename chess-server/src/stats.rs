@@ -2,6 +2,17 @@ use axum::{extract::State, Json};
 use serde::Serialize;
 use crate::{AppState, error::AppError, middleware::AuthUser};
 
+#[derive(Serialize, sqlx::FromRow)]
+pub struct RecentGame {
+    pub id:             uuid::Uuid,
+    pub result:         String,
+    pub accuracy_white: Option<f32>,
+    pub accuracy_black: Option<f32>,
+    pub blunders:       i32,
+    pub mistakes:       i32,
+    pub inaccuracies:   i32,
+}
+
 #[derive(Serialize)]
 pub struct UserStats {
     pub wins:               i64,
@@ -11,6 +22,7 @@ pub struct UserStats {
     pub blunders_total:     i64,
     pub mistakes_total:     i64,
     pub inaccuracies_total: i64,
+    pub recent_games:       Vec<RecentGame>,
 }
 
 // Internal row type — lets sqlx handle nullable SUM/AVG naturally.
@@ -48,6 +60,27 @@ pub async fn get_stats(
     .await
     .map_err(anyhow::Error::from)?;
 
+    let recent_games = sqlx::query_as::<_, RecentGame>(
+        r#"
+        SELECT
+            id,
+            result,
+            accuracy_white,
+            accuracy_black,
+            (COALESCE(blunders_white,     0)::INTEGER + COALESCE(blunders_black,     0)::INTEGER) AS blunders,
+            (COALESCE(mistakes_white,     0)::INTEGER + COALESCE(mistakes_black,     0)::INTEGER) AS mistakes,
+            (COALESCE(inaccuracies_white, 0)::INTEGER + COALESCE(inaccuracies_black, 0)::INTEGER) AS inaccuracies
+        FROM games
+        WHERE user_id = $1 AND mode = 'pvl'
+        ORDER BY played_at DESC
+        LIMIT 5
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(anyhow::Error::from)?;
+
     Ok(Json(UserStats {
         wins:               raw.wins,
         losses:             raw.losses,
@@ -56,5 +89,6 @@ pub async fn get_stats(
         blunders_total:     raw.blunders_total.unwrap_or(0),
         mistakes_total:     raw.mistakes_total.unwrap_or(0),
         inaccuracies_total: raw.inaccuracies_total.unwrap_or(0),
+        recent_games,
     }))
 }
