@@ -27,7 +27,7 @@ fn build_user_menu(
 
     let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
     let name = session.display_name.clone().unwrap_or_else(|| "Usuario".to_string());
-    let arrow = if open { "▲" } else { "▾" };
+    let chevron = if open { "icons/chevron-up.png" } else { "icons/chevron-down.png" };
 
     commands.spawn((
         NodeBundle {
@@ -65,10 +65,26 @@ fn build_user_menu(
             BtnUserMenu,
         ))
         .with_children(|p| {
-            p.spawn(TextBundle::from_section(
-                format!("{}  {}", name, arrow),
-                TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(0.92, 0.92, 0.92) },
-            ));
+            p.spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(8.0),
+                    ..default()
+                },
+                ..default()
+            })
+            .with_children(|row| {
+                row.spawn(TextBundle::from_section(
+                    name.clone(),
+                    TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(0.92, 0.92, 0.92) },
+                ));
+                row.spawn(ImageBundle {
+                    style: Style { width: Val::Px(18.0), height: Val::Px(18.0), ..default() },
+                    image: UiImage::new(asset_server.load(chevron)),
+                    ..default()
+                });
+            });
         });
 
         if open {

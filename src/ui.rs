@@ -226,14 +226,88 @@ fn spawn_game_over_overlay(
                     TextStyle { font: font.clone(), font_size: 26.0, color: Color::rgb(0.8, 0.9, 1.0) },
                 ));
 
-                root.spawn(TextBundle::from_section(
-                    format!(
-                        "Blancas: ??{}  ?{}  ⚠{}      Negras: ??{}  ?{}  ⚠{}",
-                        s.blunders[0], s.mistakes[0], s.inaccuracies[0],
-                        s.blunders[1], s.mistakes[1], s.inaccuracies[1],
-                    ),
-                    TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.7, 0.7, 0.7) },
-                ));
+                // Stats table: icon | label | white | black
+                root.spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: Val::Px(4.0),
+                        ..default()
+                    },
+                    ..default()
+                })
+                .with_children(|table| {
+                    // Header row
+                    table.spawn(NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(8.0),
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        // spacer for icon+label columns
+                        row.spawn(NodeBundle { style: Style { width: Val::Px(164.0), ..default() }, ..default() });
+                        for header in ["Blancas", "Negras"] {
+                            row.spawn(NodeBundle {
+                                style: Style { width: Val::Px(64.0), justify_content: JustifyContent::Center, ..default() },
+                                ..default()
+                            })
+                            .with_children(|p| {
+                                p.spawn(TextBundle::from_section(header, TextStyle {
+                                    font: font.clone(), font_size: 17.0, color: Color::rgb(0.65, 0.65, 0.75),
+                                }));
+                            });
+                        }
+                    });
+
+                    // Data rows
+                    let rows: [(&str, &str, u8, u8); 3] = [
+                        ("icons/blunder.png",    "Graves",    s.blunders[0],     s.blunders[1]),
+                        ("icons/mistake.png",    "Errores",   s.mistakes[0],     s.mistakes[1]),
+                        ("icons/inaccuracy.png", "Inexactos", s.inaccuracies[0], s.inaccuracies[1]),
+                    ];
+                    for (icon, label, white_n, black_n) in rows {
+                        table.spawn(NodeBundle {
+                            style: Style {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            ..default()
+                        })
+                        .with_children(|row| {
+                            row.spawn(ImageBundle {
+                                style: Style { width: Val::Px(28.0), height: Val::Px(28.0), ..default() },
+                                image: UiImage::new(asset_server.load(icon)),
+                                ..default()
+                            });
+                            row.spawn(NodeBundle {
+                                style: Style { width: Val::Px(128.0), ..default() },
+                                ..default()
+                            })
+                            .with_children(|p| {
+                                p.spawn(TextBundle::from_section(label, TextStyle {
+                                    font: font.clone(), font_size: 20.0, color: Color::rgb(0.75, 0.75, 0.75),
+                                }));
+                            });
+                            for count in [white_n, black_n] {
+                                row.spawn(NodeBundle {
+                                    style: Style { width: Val::Px(64.0), justify_content: JustifyContent::Center, ..default() },
+                                    ..default()
+                                })
+                                .with_children(|p| {
+                                    p.spawn(TextBundle::from_section(count.to_string(), TextStyle {
+                                        font: font.clone(), font_size: 22.0, color: Color::rgb(0.88, 0.88, 0.92),
+                                    }));
+                                });
+                            }
+                        });
+                    }
+                });
 
                 let critical: Vec<String> = r.summary.critical_move_indices
                     .iter()
