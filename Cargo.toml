@@ -18,8 +18,11 @@ chess-engine = { path = "chess-engine" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 web-sys = { version = "0.3", features = ["Window", "Location", "Storage"] }
+gloo-net = { version = "0.6", features = ["http", "json"] }
+serde = { version = "1", features = ["derive"] }
 
 [profile.dev]
 opt-level = 1

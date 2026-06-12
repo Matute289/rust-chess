@@ -350,12 +350,18 @@ fn handle_pvl(
     root_q: Query<Entity, With<HomeRoot>>,
     asset_server: Res<AssetServer>,
     timer_idx: Res<SelectedTimerIdx>,
+    session: Res<crate::auth::UserSession>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
             config.mode = GameMode::PvL;
-            *home_screen = HomeScreen::LoginPrompt;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::LoginPrompt, timer_idx.0);
+            let next = if session.is_logged_in() {
+                HomeScreen::ColorSelect
+            } else {
+                HomeScreen::LoginPrompt
+            };
+            *home_screen = next;
+            rebuild_home(&mut commands, &asset_server, &root_q, next, timer_idx.0);
         }
     }
 }
