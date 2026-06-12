@@ -1,0 +1,52 @@
+name: Deploy chess-api
+
+on:
+  push:
+    branches: [browser]
+    paths:
+      - 'chess-server/**'
+      - 'deploy/docker-compose.vps.yml'
+      - '.github/workflows/deploy-chess-api.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    name: Build chess-api image and deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build chess-api image
+        run: |
+          docker buildx build --load \
+            -f chess-server/Dockerfile \
+            -t chess-api:latest .
+
+      - name: Save image as tarball
+        run: docker save chess-api:latest | gzip > chess-api.tar.gz
+
+      - name: Copy image to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: mgrinberg
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: chess-api.tar.gz
+          target: /tmp/
+
+      - name: Load image and restart on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: mgrinberg
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            docker load < /tmp/chess-api.tar.gz
+            rm /tmp/chess-api.tar.gz
+            cd /opt/rust-chess
+            docker compose -f docker-compose.vps.yml up -d --force-recreate chess-api chess-db
+            docker compose -f docker-compose.vps.yml ps
