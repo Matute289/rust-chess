@@ -681,6 +681,18 @@ fn highlight_close_btn(
     }
 }
 
+fn highlight_summary_btn(
+    mut q: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<BtnSummary>)>,
+) {
+    for (i, mut color) in &mut q {
+        *color = match i {
+            Interaction::Pressed => BackgroundColor(Color::rgba(0.28, 0.48, 0.78, 0.97)),
+            Interaction::Hovered => BackgroundColor(Color::rgba(0.22, 0.38, 0.65, 0.95)),
+            Interaction::None    => BackgroundColor(Color::rgba(0.15, 0.25, 0.45, 0.85)),
+        };
+    }
+}
+
 // ─── Stats fetch (WASM only) ──────────────────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
@@ -755,6 +767,7 @@ impl Plugin for PvLHubPlugin {
             .add_systems(Update, (
                 highlight_pvl_buttons,
                 highlight_close_btn,
+                highlight_summary_btn,
                 handle_elo_tooltip,
                 poll_stats_result,
                 handle_pvl_jugar,

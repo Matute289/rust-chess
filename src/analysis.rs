@@ -148,8 +148,8 @@ pub fn run_post_game_analysis(
 
         let r = analyze_game(&record);
 
-        // Generate colloquial narrative for single-player modes
-        if matches!(config.mode, GameMode::PvC | GameMode::PvL) {
+        // Narrative only for PvL (learning mode)
+        if config.mode == GameMode::PvL {
             narrative.0 = Some(generate_narrative(&r, config.player_side));
         }
 
