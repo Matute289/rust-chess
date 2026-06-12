@@ -4,6 +4,7 @@ mod auth;
 mod board;
 mod captured;
 mod home;
+mod persistence;
 mod pieces;
 mod state;
 mod ui;
@@ -17,6 +18,7 @@ use auth::AuthPlugin;
 use board::BoardPlugin;
 use captured::CapturedPlugin;
 use home::HomePlugin;
+use persistence::PersistencePlugin;
 use pieces::PiecesPlugin;
 use state::{AppState, GameConfig};
 use ui::UIPlugin;
@@ -71,7 +73,7 @@ pub fn run_app() {
         .init_state::<AppState>()
         .init_resource::<GameConfig>()
         .add_plugins(AuthPlugin)
-        .add_plugins((HomePlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin))
+        .add_plugins((HomePlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin))
         .add_systems(OnEnter(AppState::Playing), on_enter_playing)
         .add_systems(OnEnter(AppState::Home),    on_enter_home)
         .add_systems(Startup, setup)

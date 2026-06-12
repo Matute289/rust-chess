@@ -46,6 +46,16 @@ impl Difficulty {
         }
     }
 
+    pub fn elo_estimate(self) -> i32 {
+        match self {
+            Difficulty::Principiante => 400,
+            Difficulty::Facil        => 800,
+            Difficulty::Medio        => 1200,
+            Difficulty::Dificil      => 1600,
+            Difficulty::Pro          => 2000,
+        }
+    }
+
     pub fn next(self) -> Self {
         match self {
             Difficulty::Principiante => Difficulty::Facil,

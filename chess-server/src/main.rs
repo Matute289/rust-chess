@@ -2,11 +2,12 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod games;
 mod middleware;
 mod models;
 
 use std::sync::Arc;
-use axum::{routing::get, Router};
+use axum::{routing::{get, post}, Router};
 use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -43,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/discord/login",        get(auth::discord_login))
         .route("/api/auth/discord/callback",     get(auth::discord_callback))
         .route("/api/me",                        get(auth::me))
+        .route("/api/games",                     post(games::post_game))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
