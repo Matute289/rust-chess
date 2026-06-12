@@ -1,34 +1,18 @@
 use bevy::prelude::*;
 use std::sync::{Arc, Mutex};
 use crate::{
-    ai::Difficulty,
     auth::UserSession,
-    pieces::PieceColor,
-    state::{AppState, GameConfig},
+    home::{HomeEntryScreen, HomeScreen},
+    state::AppState,
 };
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const TIMER_PRESETS_MINS: &[u32] = &[
-    1, 3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120,
-];
 
 // ─── Resources ────────────────────────────────────────────────────────────────
 
 #[derive(Resource, Default, PartialEq, Eq, Clone, Copy)]
-pub enum PvLHubScreen {
+enum PvLHubScreen {
     #[default]
     Hub,
     NeedLogin,
-    ColorSelect,
-    DifficultySelect,
-    TimerSelect,
-}
-
-#[derive(Resource)]
-struct PvLTimerIdx(usize);
-impl Default for PvLTimerIdx {
-    fn default() -> Self { Self(2) } // 5 min
 }
 
 #[derive(Clone, Default)]
@@ -57,13 +41,6 @@ struct LoadedStats(Option<FetchedStats>);
 #[derive(Component)] struct BtnPvLJugar;
 #[derive(Component)] struct BtnPvLBack;
 #[derive(Component)] struct BtnPvLOAuth(pub &'static str);
-#[derive(Component)] struct BtnPvLSideWhite;
-#[derive(Component)] struct BtnPvLSideBlack;
-#[derive(Component)] struct BtnPvLDifficulty(Difficulty);
-#[derive(Component)] struct BtnPvLTimerDown;
-#[derive(Component)] struct BtnPvLTimerUp;
-#[derive(Component)] struct BtnPvLNoTimer;
-#[derive(Component)] struct BtnPvLPlay;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -134,7 +111,6 @@ fn build_pvl_hub_root(
     commands: &mut Commands,
     asset_server: &AssetServer,
     screen: PvLHubScreen,
-    timer_idx: usize,
     session: &UserSession,
     stats: &Option<FetchedStats>,
 ) {
@@ -239,121 +215,6 @@ fn build_pvl_hub_root(
                 spacer(root, 16.0);
                 make_btn(root, font.clone(), "← Volver", BtnPvLBack);
             }
-
-            PvLHubScreen::ColorSelect => {
-                root.spawn(TextBundle::from_section(
-                    "¿Con qué color jugás?",
-                    TextStyle { font: font.clone(), font_size: 36.0, color: Color::rgb(0.7, 0.7, 0.85) },
-                ));
-                spacer(root, 24.0);
-                make_btn(root, font.clone(), "Blancas", BtnPvLSideWhite);
-                make_btn(root, font.clone(), "Negras",  BtnPvLSideBlack);
-                spacer(root, 12.0);
-                make_btn(root, font.clone(), "← Volver", BtnPvLBack);
-            }
-
-            PvLHubScreen::DifficultySelect => {
-                root.spawn(TextBundle::from_section(
-                    "Elegí la dificultad",
-                    TextStyle { font: font.clone(), font_size: 36.0, color: Color::rgb(0.7, 0.7, 0.85) },
-                ));
-                spacer(root, 20.0);
-                for d in [
-                    Difficulty::Principiante,
-                    Difficulty::Facil,
-                    Difficulty::Medio,
-                    Difficulty::Dificil,
-                    Difficulty::Pro,
-                ] {
-                    make_btn(root, font.clone(), d.label(), BtnPvLDifficulty(d));
-                }
-                spacer(root, 12.0);
-                make_btn(root, font.clone(), "← Volver", BtnPvLBack);
-            }
-
-            PvLHubScreen::TimerSelect => {
-                root.spawn(TextBundle::from_section(
-                    "¿Cuánto tiempo por turno?",
-                    TextStyle { font: font.clone(), font_size: 32.0, color: Color::rgb(0.7, 0.7, 0.85) },
-                ));
-                spacer(root, 28.0);
-
-                root.spawn(NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Row,
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(12.0),
-                        ..default()
-                    },
-                    ..default()
-                })
-                .with_children(|row| {
-                    row.spawn((
-                        ButtonBundle {
-                            style: Style {
-                                width: Val::Px(72.0), height: Val::Px(72.0),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                border: UiRect::all(Val::Px(2.0)),
-                                ..default()
-                            },
-                            background_color: BackgroundColor(Color::rgba(0.15, 0.15, 0.28, 0.92)),
-                            border_color: BorderColor(Color::rgba(0.4, 0.4, 0.6, 0.5)),
-                            ..default()
-                        },
-                        BtnPvLTimerDown,
-                    ))
-                    .with_children(|p| {
-                        p.spawn(TextBundle::from_section("<", TextStyle {
-                            font: font.clone(), font_size: 32.0, color: Color::rgb(0.92, 0.92, 0.92),
-                        }));
-                    });
-
-                    let mins = TIMER_PRESETS_MINS[timer_idx];
-                    let label = if mins == 1 { "1 min".to_string() } else { format!("{} min", mins) };
-                    row.spawn(NodeBundle {
-                        style: Style {
-                            width: Val::Px(200.0), height: Val::Px(72.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        ..default()
-                    })
-                    .with_children(|p| {
-                        p.spawn(TextBundle::from_section(label, TextStyle {
-                            font: font.clone(), font_size: 40.0, color: Color::rgb(0.95, 0.92, 0.80),
-                        }));
-                    });
-
-                    row.spawn((
-                        ButtonBundle {
-                            style: Style {
-                                width: Val::Px(72.0), height: Val::Px(72.0),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                border: UiRect::all(Val::Px(2.0)),
-                                ..default()
-                            },
-                            background_color: BackgroundColor(Color::rgba(0.15, 0.15, 0.28, 0.92)),
-                            border_color: BorderColor(Color::rgba(0.4, 0.4, 0.6, 0.5)),
-                            ..default()
-                        },
-                        BtnPvLTimerUp,
-                    ))
-                    .with_children(|p| {
-                        p.spawn(TextBundle::from_section(">", TextStyle {
-                            font: font.clone(), font_size: 32.0, color: Color::rgb(0.92, 0.92, 0.92),
-                        }));
-                    });
-                });
-
-                spacer(root, 20.0);
-                make_btn(root, font.clone(), "Sin reloj", BtnPvLNoTimer);
-                make_btn(root, font.clone(), "Jugar",     BtnPvLPlay);
-                spacer(root, 8.0);
-                make_btn(root, font.clone(), "← Volver",  BtnPvLBack);
-            }
         });
 }
 
@@ -362,12 +223,11 @@ fn rebuild_pvl_hub(
     asset_server: &AssetServer,
     root_q: &Query<Entity, With<PvLHubRoot>>,
     screen: PvLHubScreen,
-    timer_idx: usize,
     session: &UserSession,
     stats: &Option<FetchedStats>,
 ) {
     for e in root_q { commands.entity(e).despawn_recursive(); }
-    build_pvl_hub_root(commands, asset_server, screen, timer_idx, session, stats);
+    build_pvl_hub_root(commands, asset_server, screen, session, stats);
 }
 
 // ─── Lifecycle systems ────────────────────────────────────────────────────────
@@ -378,7 +238,6 @@ fn setup_pvl_hub(
     session: Res<UserSession>,
     mut screen: ResMut<PvLHubScreen>,
     mut loaded_stats: ResMut<LoadedStats>,
-    timer_idx: Res<PvLTimerIdx>,
     fetch_state: Res<StatsFetchState>,
 ) {
     loaded_stats.0 = None;
@@ -399,7 +258,7 @@ fn setup_pvl_hub(
         *screen = PvLHubScreen::NeedLogin;
     }
 
-    build_pvl_hub_root(&mut commands, &asset_server, *screen, timer_idx.0, &session, &loaded_stats.0);
+    build_pvl_hub_root(&mut commands, &asset_server, *screen, &session, &loaded_stats.0);
 }
 
 fn despawn_pvl_hub(mut commands: Commands, q: Query<Entity, With<PvLHubRoot>>) {
@@ -414,14 +273,13 @@ fn poll_stats_result(
     root_q: Query<Entity, With<PvLHubRoot>>,
     asset_server: Res<AssetServer>,
     session: Res<UserSession>,
-    timer_idx: Res<PvLTimerIdx>,
 ) {
     if let Ok(mut guard) = fetch_state.0.try_lock() {
         if let Some(stats) = guard.take() {
             loaded_stats.0 = Some(stats);
             if *screen == PvLHubScreen::Hub {
                 for e in &root_q { commands.entity(e).despawn_recursive(); }
-                build_pvl_hub_root(&mut commands, &asset_server, PvLHubScreen::Hub, timer_idx.0, &session, &loaded_stats.0);
+                build_pvl_hub_root(&mut commands, &asset_server, PvLHubScreen::Hub, &session, &loaded_stats.0);
             }
         }
     }
@@ -443,18 +301,13 @@ fn highlight_pvl_buttons(
 
 fn handle_pvl_jugar(
     q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLJugar>)>,
-    mut screen: ResMut<PvLHubScreen>,
-    mut commands: Commands,
-    root_q: Query<Entity, With<PvLHubRoot>>,
-    asset_server: Res<AssetServer>,
-    timer_idx: Res<PvLTimerIdx>,
-    session: Res<UserSession>,
-    loaded_stats: Res<LoadedStats>,
+    mut entry: ResMut<HomeEntryScreen>,
+    mut next_state: ResMut<NextState<AppState>>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
-            *screen = PvLHubScreen::ColorSelect;
-            rebuild_pvl_hub(&mut commands, &asset_server, &root_q, *screen, timer_idx.0, &session, &loaded_stats.0);
+            entry.0 = HomeScreen::ColorSelect;
+            next_state.set(AppState::Home);
         }
     }
 }
@@ -480,147 +333,13 @@ fn handle_pvl_oauth(
     }
 }
 
-fn handle_pvl_color_select(
-    white_q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLSideWhite>)>,
-    black_q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLSideBlack>)>,
-    mut config: ResMut<GameConfig>,
-    mut screen: ResMut<PvLHubScreen>,
-    mut commands: Commands,
-    root_q: Query<Entity, With<PvLHubRoot>>,
-    asset_server: Res<AssetServer>,
-    timer_idx: Res<PvLTimerIdx>,
-    session: Res<UserSession>,
-    loaded_stats: Res<LoadedStats>,
-) {
-    for i in &white_q {
-        if *i == Interaction::Pressed {
-            config.player_side = PieceColor::White;
-            *screen = PvLHubScreen::DifficultySelect;
-            rebuild_pvl_hub(&mut commands, &asset_server, &root_q, *screen, timer_idx.0, &session, &loaded_stats.0);
-        }
-    }
-    for i in &black_q {
-        if *i == Interaction::Pressed {
-            config.player_side = PieceColor::Black;
-            *screen = PvLHubScreen::DifficultySelect;
-            rebuild_pvl_hub(&mut commands, &asset_server, &root_q, *screen, timer_idx.0, &session, &loaded_stats.0);
-        }
-    }
-}
-
-fn handle_pvl_difficulty(
-    q: Query<(&Interaction, &BtnPvLDifficulty), Changed<Interaction>>,
-    mut config: ResMut<GameConfig>,
-    mut screen: ResMut<PvLHubScreen>,
-    mut commands: Commands,
-    root_q: Query<Entity, With<PvLHubRoot>>,
-    asset_server: Res<AssetServer>,
-    timer_idx: Res<PvLTimerIdx>,
-    session: Res<UserSession>,
-    loaded_stats: Res<LoadedStats>,
-) {
-    for (i, btn) in &q {
-        if *i == Interaction::Pressed {
-            config.difficulty = btn.0;
-            *screen = PvLHubScreen::TimerSelect;
-            rebuild_pvl_hub(&mut commands, &asset_server, &root_q, *screen, timer_idx.0, &session, &loaded_stats.0);
-        }
-    }
-}
-
-fn handle_pvl_timer_down(
-    q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLTimerDown>)>,
-    mut timer_idx: ResMut<PvLTimerIdx>,
-    mut commands: Commands,
-    root_q: Query<Entity, With<PvLHubRoot>>,
-    asset_server: Res<AssetServer>,
-    session: Res<UserSession>,
-    loaded_stats: Res<LoadedStats>,
-) {
-    for i in &q {
-        if *i == Interaction::Pressed {
-            timer_idx.0 = if timer_idx.0 == 0 { TIMER_PRESETS_MINS.len() - 1 } else { timer_idx.0 - 1 };
-            let idx = timer_idx.0;
-            rebuild_pvl_hub(&mut commands, &asset_server, &root_q, PvLHubScreen::TimerSelect, idx, &session, &loaded_stats.0);
-        }
-    }
-}
-
-fn handle_pvl_timer_up(
-    q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLTimerUp>)>,
-    mut timer_idx: ResMut<PvLTimerIdx>,
-    mut commands: Commands,
-    root_q: Query<Entity, With<PvLHubRoot>>,
-    asset_server: Res<AssetServer>,
-    session: Res<UserSession>,
-    loaded_stats: Res<LoadedStats>,
-) {
-    for i in &q {
-        if *i == Interaction::Pressed {
-            timer_idx.0 = (timer_idx.0 + 1) % TIMER_PRESETS_MINS.len();
-            let idx = timer_idx.0;
-            rebuild_pvl_hub(&mut commands, &asset_server, &root_q, PvLHubScreen::TimerSelect, idx, &session, &loaded_stats.0);
-        }
-    }
-}
-
-fn handle_pvl_no_timer(
-    q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLNoTimer>)>,
-    mut config: ResMut<GameConfig>,
-    mut next_state: ResMut<NextState<AppState>>,
-) {
-    for i in &q {
-        if *i == Interaction::Pressed {
-            config.timer_secs = None;
-            next_state.set(AppState::Playing);
-        }
-    }
-}
-
-fn handle_pvl_play(
-    q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLPlay>)>,
-    mut config: ResMut<GameConfig>,
-    timer_idx: Res<PvLTimerIdx>,
-    mut next_state: ResMut<NextState<AppState>>,
-) {
-    for i in &q {
-        if *i == Interaction::Pressed {
-            config.timer_secs = Some(TIMER_PRESETS_MINS[timer_idx.0] * 60);
-            next_state.set(AppState::Playing);
-        }
-    }
-}
-
 fn handle_pvl_back(
     q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLBack>)>,
-    mut screen: ResMut<PvLHubScreen>,
-    mut commands: Commands,
-    root_q: Query<Entity, With<PvLHubRoot>>,
-    asset_server: Res<AssetServer>,
-    timer_idx: Res<PvLTimerIdx>,
-    session: Res<UserSession>,
-    loaded_stats: Res<LoadedStats>,
     mut next_state: ResMut<NextState<AppState>>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
-            match *screen {
-                PvLHubScreen::Hub | PvLHubScreen::NeedLogin => {
-                    next_state.set(AppState::Home);
-                }
-                PvLHubScreen::ColorSelect => {
-                    *screen = PvLHubScreen::Hub;
-                    rebuild_pvl_hub(&mut commands, &asset_server, &root_q, *screen, timer_idx.0, &session, &loaded_stats.0);
-                }
-                PvLHubScreen::DifficultySelect => {
-                    *screen = PvLHubScreen::ColorSelect;
-                    rebuild_pvl_hub(&mut commands, &asset_server, &root_q, *screen, timer_idx.0, &session, &loaded_stats.0);
-                }
-                PvLHubScreen::TimerSelect => {
-                    *screen = PvLHubScreen::DifficultySelect;
-                    rebuild_pvl_hub(&mut commands, &asset_server, &root_q, *screen, timer_idx.0, &session, &loaded_stats.0);
-                }
-            }
+            next_state.set(AppState::Home);
         }
     }
 }
@@ -668,7 +387,6 @@ impl Plugin for PvLHubPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<PvLHubScreen>()
-            .init_resource::<PvLTimerIdx>()
             .init_resource::<StatsFetchState>()
             .init_resource::<LoadedStats>()
             .add_systems(OnEnter(AppState::PvLHub), setup_pvl_hub)
@@ -678,12 +396,6 @@ impl Plugin for PvLHubPlugin {
                 poll_stats_result,
                 handle_pvl_jugar,
                 handle_pvl_oauth,
-                handle_pvl_color_select,
-                handle_pvl_difficulty,
-                handle_pvl_timer_down,
-                handle_pvl_timer_up,
-                handle_pvl_no_timer,
-                handle_pvl_play,
                 handle_pvl_back,
             ).run_if(in_state(AppState::PvLHub)));
     }

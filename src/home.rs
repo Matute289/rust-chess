@@ -211,6 +211,11 @@ pub enum HomeScreen {
     TimerSelect,
 }
 
+/// Set this before transitioning to AppState::Home to start on a specific sub-screen.
+/// Consumed once by reset_home_screen and then reset to ModeSelect.
+#[derive(Resource, Default)]
+pub struct HomeEntryScreen(pub HomeScreen);
+
 #[derive(Resource)]
 struct SelectedTimerIdx(usize);
 impl Default for SelectedTimerIdx {
@@ -698,9 +703,15 @@ fn handle_back(
     root_q: Query<Entity, With<HomeRoot>>,
     asset_server: Res<AssetServer>,
     timer_idx: Res<SelectedTimerIdx>,
+    mut next_state: ResMut<NextState<AppState>>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
+            // ColorSelect reached from PvLHub → go back to the hub
+            if *home_screen == HomeScreen::ColorSelect && config.mode == GameMode::PvL {
+                next_state.set(AppState::PvLHub);
+                return;
+            }
             let target = match *home_screen {
                 HomeScreen::TimerSelect => {
                     if config.mode == GameMode::PvP { HomeScreen::ModeSelect }
@@ -720,8 +731,10 @@ fn reset_home_screen(
     mut home_screen: ResMut<HomeScreen>,
     mut timer_idx: ResMut<SelectedTimerIdx>,
     mut menu_open: ResMut<UserMenuOpen>,
+    mut entry: ResMut<HomeEntryScreen>,
 ) {
-    *home_screen = HomeScreen::ModeSelect;
+    *home_screen = entry.0;
+    entry.0 = HomeScreen::ModeSelect; // consume — reset for next entry
     *timer_idx = SelectedTimerIdx::default();
     menu_open.0 = false;
 }
@@ -734,6 +747,7 @@ impl Plugin for HomePlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<HomeScreen>()
+            .init_resource::<HomeEntryScreen>()
             .init_resource::<SelectedTimerIdx>()
             .init_resource::<UserMenuOpen>()
             .add_systems(OnEnter(AppState::Home), (reset_home_screen, spawn_home, spawn_user_menu).chain())
