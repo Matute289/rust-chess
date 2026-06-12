@@ -6,6 +6,7 @@ mod captured;
 mod home;
 mod persistence;
 mod pieces;
+mod pvl_hub;
 mod state;
 mod ui;
 
@@ -20,6 +21,7 @@ use captured::CapturedPlugin;
 use home::HomePlugin;
 use persistence::PersistencePlugin;
 use pieces::PiecesPlugin;
+use pvl_hub::PvLHubPlugin;
 use state::{AppState, GameConfig};
 use ui::UIPlugin;
 
@@ -51,6 +53,11 @@ fn on_enter_home() {
     hide_game_controls();
 }
 
+fn on_enter_pvl_hub() {
+    #[cfg(target_arch = "wasm32")]
+    hide_game_controls();
+}
+
 pub fn run_app() {
     App::new()
         .add_plugins(
@@ -73,9 +80,10 @@ pub fn run_app() {
         .init_state::<AppState>()
         .init_resource::<GameConfig>()
         .add_plugins(AuthPlugin)
-        .add_plugins((HomePlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin))
+        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin))
         .add_systems(OnEnter(AppState::Playing), on_enter_playing)
         .add_systems(OnEnter(AppState::Home),    on_enter_home)
+        .add_systems(OnEnter(AppState::PvLHub),  on_enter_pvl_hub)
         .add_systems(Startup, setup)
         .run();
 }

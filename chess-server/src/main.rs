@@ -5,6 +5,7 @@ mod error;
 mod games;
 mod middleware;
 mod models;
+mod stats;
 
 use std::sync::Arc;
 use axum::{routing::{get, post}, Router};
@@ -45,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/discord/callback",     get(auth::discord_callback))
         .route("/api/me",                        get(auth::me))
         .route("/api/games",                     post(games::post_game))
+        .route("/api/stats",                     get(stats::get_stats))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);

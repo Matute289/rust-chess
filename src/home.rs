@@ -536,23 +536,12 @@ fn handle_pvc(
 fn handle_pvl(
     q: Query<&Interaction, (Changed<Interaction>, With<BtnPvL>)>,
     mut config: ResMut<GameConfig>,
-    mut home_screen: ResMut<HomeScreen>,
-    mut commands: Commands,
-    root_q: Query<Entity, With<HomeRoot>>,
-    asset_server: Res<AssetServer>,
-    timer_idx: Res<SelectedTimerIdx>,
-    session: Res<crate::auth::UserSession>,
+    mut next_state: ResMut<NextState<AppState>>,
 ) {
     for i in &q {
         if *i == Interaction::Pressed {
             config.mode = GameMode::PvL;
-            let next = if session.is_logged_in() {
-                HomeScreen::ColorSelect
-            } else {
-                HomeScreen::LoginPrompt
-            };
-            *home_screen = next;
-            rebuild_home(&mut commands, &asset_server, &root_q, next, timer_idx.0);
+            next_state.set(AppState::PvLHub);
         }
     }
 }

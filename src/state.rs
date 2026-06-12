@@ -5,6 +5,7 @@ use crate::pieces::PieceColor;
 pub enum AppState {
     #[default]
     Home,
+    PvLHub,
     Playing,
 }
 
