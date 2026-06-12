@@ -36,9 +36,9 @@ pub async fn get_stats(
             COUNT(*) FILTER (WHERE result = 'loss') AS losses,
             COUNT(*) FILTER (WHERE result = 'draw') AS draws,
             AVG((accuracy_white + accuracy_black) / 2.0) AS accuracy_avg,
-            SUM(blunders_white::BIGINT     + blunders_black::BIGINT)     AS blunders_total,
-            SUM(mistakes_white::BIGINT     + mistakes_black::BIGINT)     AS mistakes_total,
-            SUM(inaccuracies_white::BIGINT + inaccuracies_black::BIGINT) AS inaccuracies_total
+            SUM(blunders_white::INTEGER     + blunders_black::INTEGER)     AS blunders_total,
+            SUM(mistakes_white::INTEGER     + mistakes_black::INTEGER)     AS mistakes_total,
+            SUM(inaccuracies_white::INTEGER + inaccuracies_black::INTEGER) AS inaccuracies_total
         FROM games
         WHERE user_id = $1 AND mode = 'pvl'
         "#,
