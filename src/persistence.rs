@@ -50,19 +50,12 @@ fn persist_on_game_end(
             _ => continue,
         };
 
+        if config.mode != GameMode::PvL { continue; }
         if !session.is_logged_in() || history.moves.is_empty() { continue; }
 
-        let jwt      = session.jwt.clone().unwrap();
-        let moves    = history.moves.iter().map(|m| m.to_uci()).collect::<Vec<_>>().join(" ");
-        let mode_str: &'static str = match config.mode {
-            GameMode::PvP => "pvp",
-            GameMode::PvC => "pvc",
-            GameMode::PvL => "pvl",
-        };
-        let opp_elo = match config.mode {
-            GameMode::PvC | GameMode::PvL => Some(config.difficulty.elo_estimate()),
-            GameMode::PvP => None,
-        };
+        let jwt     = session.jwt.clone().unwrap();
+        let moves   = history.moves.iter().map(|m| m.to_uci()).collect::<Vec<_>>().join(" ");
+        let opp_elo = Some(config.difficulty.elo_estimate());
         let (aw, ab, bl, mi, ina) = report.0.as_ref().map(|r| {
             let s = &r.summary;
             (Some(s.accuracy_white), Some(s.accuracy_black),
@@ -73,7 +66,7 @@ fn persist_on_game_end(
 
         dispatch_persist(
             state.0.clone(),
-            jwt, mode_str, result_str, opp_elo,
+            jwt, result_str, opp_elo,
             aw, ab, bl, mi, ina, moves,
         );
     }
@@ -82,7 +75,6 @@ fn persist_on_game_end(
 fn dispatch_persist(
     arc:            Arc<Mutex<Option<PersistResult>>>,
     jwt:            String,
-    mode:           &'static str,
     result:         &'static str,
     opponent_elo:   Option<i32>,
     accuracy_white: Option<f32>,
@@ -96,7 +88,7 @@ fn dispatch_persist(
     {
         #[derive(serde::Serialize)]
         struct P {
-            mode:           &'static str,
+            mode:           &'static str,  // always "pvl"
             result:         &'static str,
             opponent_elo:   Option<i32>,
             accuracy_white: Option<f32>,
@@ -108,7 +100,7 @@ fn dispatch_persist(
         }
 
         let payload = P {
-            mode, result, opponent_elo,
+            mode: "pvl", result, opponent_elo,
             accuracy_white, accuracy_black,
             blunders, mistakes, inaccuracies,
             moves_uci,
@@ -134,7 +126,7 @@ fn dispatch_persist(
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = (arc, jwt, mode, result, opponent_elo, accuracy_white, accuracy_black,
+    let _ = (arc, jwt, result, opponent_elo, accuracy_white, accuracy_black,
              blunders, mistakes, inaccuracies, moves_uci);
 }
 
