@@ -9,6 +9,7 @@ COPY .cargo ./.cargo
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY chess-engine ./chess-engine
+COPY chess-server ./chess-server
 COPY assets ./assets
 RUN wasm-pack build --target web --out-dir web/pkg
 
