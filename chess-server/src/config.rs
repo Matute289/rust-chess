@@ -27,7 +27,7 @@ impl Config {
             discord_client_id:     std::env::var("DISCORD_CLIENT_ID").context("DISCORD_CLIENT_ID must be set")?,
             discord_client_secret: std::env::var("DISCORD_CLIENT_SECRET").context("DISCORD_CLIENT_SECRET must be set")?,
             frontend_url:          std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:8090".into()),
-            port:                  std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8005),
+            port:                  std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8009),
         })
     }
 }
