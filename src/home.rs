@@ -8,6 +8,181 @@ const TIMER_PRESETS_MINS: &[u32] = &[
     1, 3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120,
 ];
 
+// ─── User menu ───────────────────────────────────────────────────────────────
+
+#[derive(Resource, Default)]
+struct UserMenuOpen(bool);
+
+#[derive(Component)] struct UserMenuRoot;
+#[derive(Component)] struct BtnUserMenu;
+#[derive(Component)] struct BtnLogout;
+
+fn build_user_menu(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    session: &crate::auth::UserSession,
+    open: bool,
+) {
+    if !session.is_logged_in() { return; }
+
+    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let name = session.display_name.clone().unwrap_or_else(|| "Usuario".to_string());
+    let arrow = if open { "▲" } else { "▾" };
+
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                top: Val::Px(16.0),
+                right: Val::Px(16.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::FlexEnd,
+                ..default()
+            },
+            z_index: ZIndex::Global(10),
+            ..default()
+        },
+        UserMenuRoot,
+    ))
+    .with_children(|root| {
+        // chip button
+        root.spawn((
+            ButtonBundle {
+                style: Style {
+                    padding: UiRect {
+                        left: Val::Px(16.0), right: Val::Px(16.0),
+                        top: Val::Px(8.0),  bottom: Val::Px(8.0),
+                    },
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::rgba(0.15, 0.15, 0.28, 0.92)),
+                border_color: BorderColor(Color::rgba(0.5, 0.5, 0.75, 0.6)),
+                ..default()
+            },
+            BtnUserMenu,
+        ))
+        .with_children(|p| {
+            p.spawn(TextBundle::from_section(
+                format!("{}  {}", name, arrow),
+                TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(0.92, 0.92, 0.92) },
+            ));
+        });
+
+        if open {
+            root.spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Stretch,
+                    min_width: Val::Px(200.0),
+                    border: UiRect::all(Val::Px(1.0)),
+                    margin: UiRect { top: Val::Px(4.0), ..default() },
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::rgba(0.10, 0.10, 0.20, 0.97)),
+                border_color: BorderColor(Color::rgba(0.5, 0.5, 0.75, 0.6)),
+                ..default()
+            })
+            .with_children(|panel| {
+                panel.spawn((
+                    ButtonBundle {
+                        style: Style {
+                            padding: UiRect {
+                                left: Val::Px(16.0), right: Val::Px(16.0),
+                                top: Val::Px(12.0),  bottom: Val::Px(12.0),
+                            },
+                            justify_content: JustifyContent::FlexStart,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                        ..default()
+                    },
+                    BtnLogout,
+                ))
+                .with_children(|p| {
+                    p.spawn(TextBundle::from_section(
+                        "Cerrar sesión",
+                        TextStyle { font, font_size: 20.0, color: Color::rgb(0.95, 0.45, 0.45) },
+                    ));
+                });
+            });
+        }
+    });
+}
+
+fn spawn_user_menu(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    session: Res<crate::auth::UserSession>,
+    menu_open: Res<UserMenuOpen>,
+) {
+    build_user_menu(&mut commands, &asset_server, &session, menu_open.0);
+}
+
+fn despawn_user_menu(mut commands: Commands, q: Query<Entity, With<UserMenuRoot>>) {
+    for e in &q { commands.entity(e).despawn_recursive(); }
+}
+
+fn handle_user_menu_btn(
+    q: Query<&Interaction, (Changed<Interaction>, With<BtnUserMenu>)>,
+    mut menu_open: ResMut<UserMenuOpen>,
+    mut commands: Commands,
+    menu_q: Query<Entity, With<UserMenuRoot>>,
+    asset_server: Res<AssetServer>,
+    session: Res<crate::auth::UserSession>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            menu_open.0 = !menu_open.0;
+            for e in &menu_q { commands.entity(e).despawn_recursive(); }
+            build_user_menu(&mut commands, &asset_server, &session, menu_open.0);
+        }
+    }
+}
+
+fn handle_logout(
+    q: Query<&Interaction, (Changed<Interaction>, With<BtnLogout>)>,
+    mut session: ResMut<crate::auth::UserSession>,
+    mut menu_open: ResMut<UserMenuOpen>,
+    mut home_screen: ResMut<HomeScreen>,
+    mut commands: Commands,
+    root_q: Query<Entity, With<HomeRoot>>,
+    asset_server: Res<AssetServer>,
+    timer_idx: Res<SelectedTimerIdx>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            *session = crate::auth::UserSession::default();
+            menu_open.0 = false;
+            #[cfg(target_arch = "wasm32")]
+            {
+                if let Some(win) = web_sys::window() {
+                    if let Ok(Some(storage)) = win.local_storage() {
+                        let _ = storage.remove_item("chess_jwt");
+                    }
+                }
+            }
+            *home_screen = HomeScreen::ModeSelect;
+            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ModeSelect, timer_idx.0);
+        }
+    }
+}
+
+fn refresh_user_menu_on_session_change(
+    session: Res<crate::auth::UserSession>,
+    menu_open: Res<UserMenuOpen>,
+    mut commands: Commands,
+    menu_q: Query<Entity, With<UserMenuRoot>>,
+    asset_server: Res<AssetServer>,
+) {
+    if !session.is_changed() { return; }
+    for e in &menu_q { commands.entity(e).despawn_recursive(); }
+    build_user_menu(&mut commands, &asset_server, &session, menu_open.0);
+}
+
 // ─── Screen state ─────────────────────────────────────────────────────────────
 
 #[derive(Resource, Default, PartialEq, Eq, Clone, Copy)]
@@ -539,9 +714,11 @@ fn handle_back(
 fn reset_home_screen(
     mut home_screen: ResMut<HomeScreen>,
     mut timer_idx: ResMut<SelectedTimerIdx>,
+    mut menu_open: ResMut<UserMenuOpen>,
 ) {
     *home_screen = HomeScreen::ModeSelect;
     *timer_idx = SelectedTimerIdx::default();
+    menu_open.0 = false;
 }
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────
@@ -553,8 +730,9 @@ impl Plugin for HomePlugin {
         app
             .init_resource::<HomeScreen>()
             .init_resource::<SelectedTimerIdx>()
-            .add_systems(OnEnter(AppState::Home), (reset_home_screen, spawn_home).chain())
-            .add_systems(OnExit(AppState::Home),  despawn_home)
+            .init_resource::<UserMenuOpen>()
+            .add_systems(OnEnter(AppState::Home), (reset_home_screen, spawn_home, spawn_user_menu).chain())
+            .add_systems(OnExit(AppState::Home),  (despawn_home, despawn_user_menu))
             .add_systems(Update, (
                 highlight_buttons,
                 handle_pvp,
@@ -568,6 +746,9 @@ impl Plugin for HomePlugin {
                 handle_no_timer,
                 handle_play,
                 handle_back,
+                handle_user_menu_btn,
+                handle_logout,
+                refresh_user_menu_on_session_change,
             ).run_if(in_state(AppState::Home)));
     }
 }
