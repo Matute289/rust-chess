@@ -66,8 +66,8 @@ pub async fn insert_game_and_update_elo(
             blunders_white, blunders_black,
             mistakes_white, mistakes_black,
             inaccuracies_white, inaccuracies_black,
-            moves_uci
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            moves_uci, summary
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
         RETURNING id
         "#,
     )
@@ -84,6 +84,7 @@ pub async fn insert_game_and_update_elo(
     .bind(payload.inaccuracies[0] as i16)
     .bind(payload.inaccuracies[1] as i16)
     .bind(&payload.moves_uci)
+    .bind(&payload.summary)
     .fetch_one(&mut *tx)
     .await?;
 

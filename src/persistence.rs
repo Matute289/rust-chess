@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use std::sync::{Arc, Mutex};
 use crate::{
-    analysis::AnalysisReport,
+    analysis::{AnalysisReport, GameNarrative},
     auth::UserSession,
     board::{GameHistory, GameStatus, GameStatusEvent},
     pieces::PieceColor,
@@ -37,6 +37,7 @@ fn persist_on_game_end(
     config:     Res<GameConfig>,
     history:    Res<GameHistory>,
     report:     Res<AnalysisReport>,
+    narrative:  Res<GameNarrative>,
     state:      Res<PersistFetchState>,
 ) {
     for ev in events.read() {
@@ -56,6 +57,7 @@ fn persist_on_game_end(
         let jwt     = session.jwt.clone().unwrap();
         let moves   = history.moves.iter().map(|m| m.to_uci()).collect::<Vec<_>>().join(" ");
         let opp_elo = Some(config.difficulty.elo_estimate());
+        let summary = narrative.0.clone();
         let (aw, ab, bl, mi, ina) = report.0.as_ref().map(|r| {
             let s = &r.summary;
             (Some(s.accuracy_white), Some(s.accuracy_black),
@@ -67,7 +69,7 @@ fn persist_on_game_end(
         dispatch_persist(
             state.0.clone(),
             jwt, result_str, opp_elo,
-            aw, ab, bl, mi, ina, moves,
+            aw, ab, bl, mi, ina, moves, summary,
         );
     }
 }
@@ -83,12 +85,13 @@ fn dispatch_persist(
     mistakes:       [u8; 2],
     inaccuracies:   [u8; 2],
     moves_uci:      String,
+    summary:        Option<String>,
 ) {
     #[cfg(target_arch = "wasm32")]
     {
         #[derive(serde::Serialize)]
         struct P {
-            mode:           &'static str,  // always "pvl"
+            mode:           &'static str,
             result:         &'static str,
             opponent_elo:   Option<i32>,
             accuracy_white: Option<f32>,
@@ -97,13 +100,14 @@ fn dispatch_persist(
             mistakes:       [u8; 2],
             inaccuracies:   [u8; 2],
             moves_uci:      String,
+            summary:        Option<String>,
         }
 
         let payload = P {
             mode: "pvl", result, opponent_elo,
             accuracy_white, accuracy_black,
             blunders, mistakes, inaccuracies,
-            moves_uci,
+            moves_uci, summary,
         };
 
         wasm_bindgen_futures::spawn_local(async move {
@@ -127,7 +131,7 @@ fn dispatch_persist(
 
     #[cfg(not(target_arch = "wasm32"))]
     let _ = (arc, jwt, result, opponent_elo, accuracy_white, accuracy_black,
-             blunders, mistakes, inaccuracies, moves_uci);
+             blunders, mistakes, inaccuracies, moves_uci, summary);
 }
 
 fn poll_persist_result(

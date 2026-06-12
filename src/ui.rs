@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::analysis::AnalysisReport;
+use crate::analysis::{AnalysisReport, GameNarrative};
 use crate::board::{GameStatus, GameStatusEvent, PlayerTurn};
 use crate::pieces::PieceColor;
 use crate::state::{AppState, GameConfig, GameMode};
@@ -128,18 +128,16 @@ fn handle_status_events(
     mut commands:    Commands,
     asset_server:    Res<AssetServer>,
     analysis_report: Res<AnalysisReport>,
+    narrative:       Res<GameNarrative>,
     overlay_q:       Query<Entity, With<GameOverOverlay>>,
     banner_q:        Query<Entity, With<CheckBanner>>,
     mut timer:       ResMut<TurnTimer>,
 ) {
     for ev in events.read() {
-        // Remove any previous check banner
         for e in &banner_q { commands.entity(e).despawn_recursive(); }
 
         match &ev.0 {
-            GameStatus::Ok => {
-                for e in &banner_q { commands.entity(e).despawn_recursive(); }
-            }
+            GameStatus::Ok => {}
             GameStatus::Check => {
                 let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
                 commands.spawn((
@@ -169,12 +167,14 @@ fn handle_status_events(
                     PieceColor::White => "¡Jaque Mate! ¡Blancas ganan!",
                     PieceColor::Black => "¡Jaque Mate! ¡Negras ganan!",
                 };
-                spawn_game_over_overlay(&mut commands, &asset_server, winner_str, false, analysis_report.0.as_ref());
+                spawn_game_over_overlay(&mut commands, &asset_server, winner_str, false,
+                    analysis_report.0.as_ref(), narrative.0.as_deref());
             }
             GameStatus::Stalemate => {
                 timer.disabled = true;
                 for e in &overlay_q { commands.entity(e).despawn_recursive(); }
-                spawn_game_over_overlay(&mut commands, &asset_server, "¡Empate por ahogado!", true, analysis_report.0.as_ref());
+                spawn_game_over_overlay(&mut commands, &asset_server, "¡Empate por ahogado!", true,
+                    analysis_report.0.as_ref(), narrative.0.as_deref());
             }
         }
     }
@@ -186,6 +186,7 @@ fn spawn_game_over_overlay(
     title:        &str,
     is_draw:      bool,
     report:       Option<&chess_engine::GameReport>,
+    narrative:    Option<&str>,
 ) {
     let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
 
@@ -309,22 +310,21 @@ fn spawn_game_over_overlay(
                     }
                 });
 
-                let critical: Vec<String> = r.summary.critical_move_indices
-                    .iter()
-                    .take(3)
-                    .filter_map(|&i| r.move_analyses.get(i).map(|a| (i, a)))
-                    .map(|(i, a)| {
-                        let side = if i % 2 == 0 { "B" } else { "N" };
-                        let move_num = i / 2 + 1;
-                        format!("Mov {}: {} {}", move_num, side, a.played_move)
+                if let Some(narr) = narrative {
+                    root.spawn(NodeBundle {
+                        style: Style {
+                            max_width: Val::Px(600.0),
+                            padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+                            ..default()
+                        },
+                        ..default()
                     })
-                    .collect();
-
-                if !critical.is_empty() {
-                    root.spawn(TextBundle::from_section(
-                        format!("Momentos clave: {}", critical.join("  |  ")),
-                        TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(1.0, 0.5, 0.2) },
-                    ));
+                    .with_children(|c| {
+                        c.spawn(TextBundle::from_section(
+                            narr,
+                            TextStyle { font: font.clone(), font_size: 18.0, color: Color::rgb(0.90, 0.88, 0.75) },
+                        ));
+                    });
                 }
             }
 

@@ -14,6 +14,7 @@ pub struct GamePayload {
     pub mistakes:       [u8; 2],
     pub inaccuracies:   [u8; 2],
     pub moves_uci:      Option<String>,
+    pub summary:        Option<String>,
 }
 
 #[derive(Serialize)]

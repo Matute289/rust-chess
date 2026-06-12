@@ -24,6 +24,7 @@ pub struct RecentGameEntry {
     pub blunders:       i32,
     pub mistakes:       i32,
     pub inaccuracies:   i32,
+    pub summary:        Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -55,6 +56,12 @@ struct LoadedStats(Option<FetchedStats>);
 #[derive(Component)] struct BtnPvLOAuth(pub &'static str);
 #[derive(Component)] pub struct EloTooltipTrigger;
 #[derive(Component)] struct EloTooltipPanel;
+#[derive(Component)] struct BtnSummary(String);
+#[derive(Component)] struct BtnSummaryClose;
+#[derive(Component)] struct SummaryPopupOverlay;
+
+#[derive(Resource, Default)]
+struct SummaryPopupText(Option<String>);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -165,11 +172,11 @@ fn build_games_table(parent: &mut ChildBuilder, font: Handle<Font>, games: &[Rec
         ..default()
     });
 
-    let col_widths = [100.0f32, 88.0, 88.0, 50.0, 50.0, 58.0];
+    let col_widths = [88.0f32, 82.0, 80.0, 44.0, 44.0, 50.0, 52.0];
     let hc = Color::rgb(0.50, 0.50, 0.68);
     let header_cells: &[(&str, Color)] = &[
         ("Partida", hc), ("Resultado", hc), ("Precisión", hc),
-        ("G", hc), ("E", hc), ("I", hc),
+        ("G", hc), ("E", hc), ("I", hc), ("", hc),
     ];
     build_table_row(parent, font.clone(), header_cells, &col_widths, 14.0);
 
@@ -193,15 +200,68 @@ fn build_games_table(parent: &mut ChildBuilder, font: Handle<Font>, games: &[Rec
         let mistakes_s     = game.mistakes.to_string();
         let inaccuracies_s = game.inaccuracies.to_string();
 
-        let row_cells: &[(&str, Color)] = &[
-            (id_short.as_str(),     Color::rgb(0.65, 0.65, 0.78)),
-            (result_text,           result_color),
-            (avg_acc.as_str(),      Color::rgb(0.80, 0.80, 0.90)),
-            (blunders_s.as_str(),   Color::rgb(0.90, 0.48, 0.48)),
-            (mistakes_s.as_str(),   Color::rgb(0.88, 0.72, 0.38)),
+        let data_cells: &[(&str, Color)] = &[
+            (id_short.as_str(),       Color::rgb(0.65, 0.65, 0.78)),
+            (result_text,             result_color),
+            (avg_acc.as_str(),        Color::rgb(0.80, 0.80, 0.90)),
+            (blunders_s.as_str(),     Color::rgb(0.90, 0.48, 0.48)),
+            (mistakes_s.as_str(),     Color::rgb(0.88, 0.72, 0.38)),
             (inaccuracies_s.as_str(), Color::rgb(0.70, 0.70, 0.88)),
         ];
-        build_table_row(parent, font.clone(), row_cells, &col_widths, 14.0);
+        // Data row: first 6 text columns + optional (ver) button
+        parent.spawn(NodeBundle {
+            style: Style { flex_direction: FlexDirection::Row, ..default() },
+            ..default()
+        })
+        .with_children(|row| {
+            for ((text, color), &width) in data_cells.iter().zip(col_widths.iter()) {
+                row.spawn(NodeBundle {
+                    style: Style {
+                        width: Val::Px(width),
+                        padding: UiRect { left: Val::Px(4.0), right: Val::Px(4.0), top: Val::Px(3.0), bottom: Val::Px(3.0) },
+                        ..default()
+                    },
+                    ..default()
+                })
+                .with_children(|cell| {
+                    cell.spawn(TextBundle::from_section(
+                        *text,
+                        TextStyle { font: font.clone(), font_size: 14.0, color: *color },
+                    ));
+                });
+            }
+            // (ver) button — last column
+            let ver_width = col_widths[6];
+            if let Some(summary_text) = &game.summary {
+                row.spawn((
+                    ButtonBundle {
+                        style: Style {
+                            width: Val::Px(ver_width),
+                            height: Val::Px(24.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::axes(Val::Px(4.0), Val::Px(2.0)),
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::rgba(0.15, 0.25, 0.45, 0.85)),
+                        border_color: BorderColor(Color::rgba(0.35, 0.45, 0.70, 0.60)),
+                        ..default()
+                    },
+                    BtnSummary(summary_text.clone()),
+                ))
+                .with_children(|p| {
+                    p.spawn(TextBundle::from_section(
+                        "ver",
+                        TextStyle { font: font.clone(), font_size: 13.0, color: Color::rgb(0.70, 0.80, 0.95) },
+                    ));
+                });
+            } else {
+                row.spawn(NodeBundle {
+                    style: Style { width: Val::Px(ver_width), ..default() },
+                    ..default()
+                });
+            }
+        });
     }
 }
 
@@ -392,8 +452,15 @@ fn setup_pvl_hub(
     build_pvl_hub_root(&mut commands, &asset_server, *screen, &session, &loaded_stats.0);
 }
 
-fn despawn_pvl_hub(mut commands: Commands, q: Query<Entity, With<PvLHubRoot>>) {
-    for e in &q { commands.entity(e).despawn_recursive(); }
+fn despawn_pvl_hub(
+    mut commands:  Commands,
+    q:             Query<Entity, With<PvLHubRoot>>,
+    overlay_q:     Query<Entity, With<SummaryPopupOverlay>>,
+    mut popup:     ResMut<SummaryPopupText>,
+) {
+    for e in &q         { commands.entity(e).despawn_recursive(); }
+    for e in &overlay_q { commands.entity(e).despawn_recursive(); }
+    popup.0 = None;
 }
 
 fn poll_stats_result(
@@ -421,7 +488,7 @@ fn poll_stats_result(
 fn highlight_pvl_buttons(
     mut q: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, Without<EloTooltipTrigger>),
+        (Changed<Interaction>, With<Button>, Without<EloTooltipTrigger>, Without<BtnSummaryClose>, Without<BtnSummary>),
     >,
 ) {
     for (i, mut color) in &mut q {
@@ -492,6 +559,128 @@ fn handle_pvl_back(
     }
 }
 
+// ─── Summary popup ────────────────────────────────────────────────────────────
+
+fn spawn_summary_popup(commands: &mut Commands, asset_server: &AssetServer, text: &str) {
+    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                width:         Val::Percent(100.0),
+                height:        Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items:     AlignItems::Center,
+                ..default()
+            },
+            background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.0, 0.80)),
+            z_index: ZIndex::Global(50),
+            ..default()
+        },
+        SummaryPopupOverlay,
+    ))
+    .with_children(|root| {
+        root.spawn(NodeBundle {
+            style: Style {
+                flex_direction: FlexDirection::Column,
+                padding:        UiRect::all(Val::Px(32.0)),
+                max_width:      Val::Px(580.0),
+                row_gap:        Val::Px(18.0),
+                border:         UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::rgba(0.06, 0.06, 0.15, 0.97)),
+            border_color: BorderColor(Color::rgba(0.40, 0.40, 0.70, 0.60)),
+            ..default()
+        })
+        .with_children(|panel| {
+            panel.spawn(TextBundle::from_section(
+                "Análisis de la partida",
+                TextStyle { font: font.clone(), font_size: 24.0, color: Color::rgb(0.90, 0.85, 0.70) },
+            ));
+            panel.spawn(NodeBundle {
+                style: Style { max_width: Val::Px(516.0), ..default() },
+                ..default()
+            })
+            .with_children(|c| {
+                c.spawn(TextBundle::from_section(
+                    text,
+                    TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgb(0.85, 0.85, 0.92) },
+                ));
+            });
+            panel.spawn((
+                ButtonBundle {
+                    style: Style {
+                        padding: UiRect { left: Val::Px(36.0), right: Val::Px(36.0), top: Val::Px(12.0), bottom: Val::Px(12.0) },
+                        justify_content: JustifyContent::Center,
+                        align_items:     AlignItems::Center,
+                        align_self:      AlignSelf::Center,
+                        ..default()
+                    },
+                    background_color: BackgroundColor(Color::rgba(0.22, 0.10, 0.10, 0.92)),
+                    border_color:     BorderColor(Color::rgba(0.50, 0.20, 0.20, 0.60)),
+                    ..default()
+                },
+                BtnSummaryClose,
+            ))
+            .with_children(|p| {
+                p.spawn(TextBundle::from_section(
+                    "Cerrar",
+                    TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(0.92, 0.88, 0.88) },
+                ));
+            });
+        });
+    });
+}
+
+fn handle_summary_btn(
+    q:         Query<(&Interaction, &BtnSummary), Changed<Interaction>>,
+    mut popup: ResMut<SummaryPopupText>,
+) {
+    for (i, btn) in &q {
+        if *i == Interaction::Pressed {
+            popup.0 = Some(btn.0.clone());
+        }
+    }
+}
+
+fn sync_summary_popup(
+    popup:       Res<SummaryPopupText>,
+    overlay_q:   Query<Entity, With<SummaryPopupOverlay>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    if !popup.is_changed() { return; }
+    for e in &overlay_q { commands.entity(e).despawn_recursive(); }
+    if let Some(text) = &popup.0 {
+        spawn_summary_popup(&mut commands, &asset_server, text);
+    }
+}
+
+fn handle_summary_close(
+    q:         Query<&Interaction, (Changed<Interaction>, With<BtnSummaryClose>)>,
+    mut popup: ResMut<SummaryPopupText>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            popup.0 = None;
+        }
+    }
+}
+
+fn highlight_close_btn(
+    mut q: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<BtnSummaryClose>)>,
+) {
+    for (i, mut color) in &mut q {
+        *color = match i {
+            Interaction::Pressed => BackgroundColor(Color::rgba(0.50, 0.15, 0.15, 0.97)),
+            Interaction::Hovered => BackgroundColor(Color::rgba(0.38, 0.12, 0.12, 0.95)),
+            Interaction::None    => BackgroundColor(Color::rgba(0.22, 0.10, 0.10, 0.92)),
+        };
+    }
+}
+
 // ─── Stats fetch (WASM only) ──────────────────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
@@ -505,6 +694,7 @@ async fn fetch_stats_async(jwt: String) -> Option<FetchedStats> {
         blunders:       i32,
         mistakes:       i32,
         inaccuracies:   i32,
+        summary:        Option<String>,
     }
 
     #[derive(serde::Deserialize)]
@@ -544,6 +734,7 @@ async fn fetch_stats_async(jwt: String) -> Option<FetchedStats> {
             blunders:       g.blunders,
             mistakes:       g.mistakes,
             inaccuracies:   g.inaccuracies,
+            summary:        g.summary,
         }).collect(),
     })
 }
@@ -558,15 +749,20 @@ impl Plugin for PvLHubPlugin {
             .init_resource::<PvLHubScreen>()
             .init_resource::<StatsFetchState>()
             .init_resource::<LoadedStats>()
+            .init_resource::<SummaryPopupText>()
             .add_systems(OnEnter(AppState::PvLHub), setup_pvl_hub)
             .add_systems(OnExit(AppState::PvLHub),  despawn_pvl_hub)
             .add_systems(Update, (
                 highlight_pvl_buttons,
+                highlight_close_btn,
                 handle_elo_tooltip,
                 poll_stats_result,
                 handle_pvl_jugar,
                 handle_pvl_oauth,
                 handle_pvl_back,
+                handle_summary_btn,
+                sync_summary_popup,
+                handle_summary_close,
             ).run_if(in_state(AppState::PvLHub)));
     }
 }

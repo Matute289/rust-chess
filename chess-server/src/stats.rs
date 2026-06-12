@@ -11,6 +11,7 @@ pub struct RecentGame {
     pub blunders:       i32,
     pub mistakes:       i32,
     pub inaccuracies:   i32,
+    pub summary:        Option<String>,
 }
 
 #[derive(Serialize)]
@@ -69,7 +70,8 @@ pub async fn get_stats(
             accuracy_black,
             (COALESCE(blunders_white,     0)::INTEGER + COALESCE(blunders_black,     0)::INTEGER) AS blunders,
             (COALESCE(mistakes_white,     0)::INTEGER + COALESCE(mistakes_black,     0)::INTEGER) AS mistakes,
-            (COALESCE(inaccuracies_white, 0)::INTEGER + COALESCE(inaccuracies_black, 0)::INTEGER) AS inaccuracies
+            (COALESCE(inaccuracies_white, 0)::INTEGER + COALESCE(inaccuracies_black, 0)::INTEGER) AS inaccuracies,
+            summary
         FROM games
         WHERE user_id = $1 AND mode = 'pvl'
         ORDER BY played_at DESC
