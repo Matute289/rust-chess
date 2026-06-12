@@ -370,10 +370,25 @@ fn handle_oauth(
     asset_server: Res<AssetServer>,
     timer_idx: Res<SelectedTimerIdx>,
 ) {
-    for (i, _btn) in &q {
-        if *i == Interaction::Pressed {
-            *home_screen = HomeScreen::ColorSelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ColorSelect, timer_idx.0);
+    for (interaction, btn) in &q {
+        if *interaction == Interaction::Pressed {
+            #[cfg(target_arch = "wasm32")]
+            {
+                let provider = btn.0.to_lowercase();
+                let url = format!(
+                    "https://rustchess.greenmountain.dev/api/auth/{}/login",
+                    provider
+                );
+                if let Some(win) = web_sys::window() {
+                    let _ = win.location().set_href(&url);
+                }
+                return;
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                *home_screen = HomeScreen::ColorSelect;
+                rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ColorSelect, timer_idx.0);
+            }
         }
     }
 }

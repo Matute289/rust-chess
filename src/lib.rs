@@ -1,5 +1,6 @@
 mod ai;
 mod analysis;
+mod auth;
 mod board;
 mod captured;
 mod home;
@@ -12,6 +13,7 @@ use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
 use ai::AIPlugin;
 use analysis::AnalysisPlugin;
+use auth::AuthPlugin;
 use board::BoardPlugin;
 use captured::CapturedPlugin;
 use home::HomePlugin;
@@ -68,6 +70,7 @@ pub fn run_app() {
         .add_plugins(DefaultPickingPlugins)
         .init_state::<AppState>()
         .init_resource::<GameConfig>()
+        .add_plugins(AuthPlugin)
         .add_plugins((HomePlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin))
         .add_systems(OnEnter(AppState::Playing), on_enter_playing)
         .add_systems(OnEnter(AppState::Home),    on_enter_home)

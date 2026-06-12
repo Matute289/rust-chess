@@ -29,6 +29,7 @@ fn spawn_hud(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     config: Res<GameConfig>,
+    session: Res<crate::auth::UserSession>,
 ) {
     let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
 
@@ -65,6 +66,12 @@ fn spawn_hud(
                 mode_label,
                 TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.6, 0.6, 0.8) },
             ));
+            if let Some(name) = &session.display_name {
+                parent.spawn(TextBundle::from_section(
+                    format!("Jugador: {}", name),
+                    TextStyle { font: font.clone(), font_size: 18.0, color: Color::srgb(0.5, 0.8, 0.5) },
+                ));
+            }
             if config.timer_secs.is_some() {
                 parent.spawn((
                     TextBundle::from_section(
