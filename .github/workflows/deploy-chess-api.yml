@@ -29,13 +29,13 @@ jobs:
       - name: Save image as tarball
         run: docker save chess-api:latest | gzip > chess-api.tar.gz
 
-      - name: Copy image to VPS
+      - name: Copy image and compose file to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: mgrinberg
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: chess-api.tar.gz
+          source: "chess-api.tar.gz,deploy/docker-compose.vps.yml"
           target: /tmp/
 
       - name: Load image and restart on VPS
@@ -47,6 +47,8 @@ jobs:
           script: |
             docker load < /tmp/chess-api.tar.gz
             rm /tmp/chess-api.tar.gz
+            cp /tmp/deploy/docker-compose.vps.yml /opt/rust-chess/docker-compose.vps.yml
+            rm -rf /tmp/deploy
             cd /opt/rust-chess
             docker compose -f docker-compose.vps.yml up -d --force-recreate chess-api chess-db
             docker compose -f docker-compose.vps.yml ps
