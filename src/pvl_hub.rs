@@ -52,6 +52,7 @@ struct LoadedStats(Option<FetchedStats>);
 
 #[derive(Component)] struct PvLHubRoot;
 #[derive(Component)] struct BtnPvLJugar;
+#[derive(Component)] struct BtnPvLConSugerencias;
 #[derive(Component)] struct BtnPvLBack;
 #[derive(Component)] struct BtnPvLOAuth(pub &'static str);
 #[derive(Component)] pub struct EloTooltipTrigger;
@@ -424,7 +425,7 @@ fn build_pvl_hub_root(
                 spacer(root, 8.0);
                 make_btn(root, font.clone(), "Jugar partida Learning", BtnPvLJugar);
                 make_disabled_btn(root, font.clone(), "vs IA Adaptativa");
-                make_disabled_btn(root, font.clone(), "Con Sugerencias");
+                make_btn(root, font.clone(), "Con Sugerencias", BtnPvLConSugerencias);
                 make_disabled_btn(root, font.clone(), "Currículo de Lecciones");
                 spacer(root, 16.0);
                 make_btn(root, font.clone(), "← Volver", BtnPvLBack);
@@ -545,6 +546,19 @@ fn handle_elo_tooltip(
 
 fn handle_pvl_jugar(
     q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLJugar>)>,
+    mut entry: ResMut<HomeEntryScreen>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            entry.0 = HomeScreen::ColorSelect;
+            next_state.set(AppState::Home);
+        }
+    }
+}
+
+fn handle_pvl_con_sugerencias(
+    q: Query<&Interaction, (Changed<Interaction>, With<BtnPvLConSugerencias>)>,
     mut entry: ResMut<HomeEntryScreen>,
     mut next_state: ResMut<NextState<AppState>>,
 ) {
@@ -819,6 +833,7 @@ impl Plugin for PvLHubPlugin {
                 handle_elo_tooltip,
                 poll_stats_result,
                 handle_pvl_jugar,
+                handle_pvl_con_sugerencias,
                 handle_pvl_oauth,
                 handle_pvl_back,
                 handle_summary_btn,
