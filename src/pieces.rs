@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
-use crate::state::AppState;
+use crate::state::{AppState, GameConfig, GameMode, LessonSetup};
 use crate::board::GameHistory;
 
 fn spawn_piece(
@@ -54,6 +54,8 @@ fn create_pieces(
     asset_server:  Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     history:       Res<GameHistory>,
+    game_config:   Res<GameConfig>,
+    lesson_setup:  Res<LessonSetup>,
 ) {
     let king_handle: Handle<Mesh> = asset_server.load("models/chess_kit/pieces.glb#Mesh0/Primitive0");
     let king_cross:  Handle<Mesh> = asset_server.load("models/chess_kit/pieces.glb#Mesh1/Primitive0");
@@ -68,7 +70,13 @@ fn create_pieces(
     let black = materials.add(Color::rgb(0.0, 0.2, 0.2));
     let s = Vec3::splat(0.2);
 
-    let fen_board = history.initial_fen.split(' ').next()
+    // For Lesson mode read directly from LessonSetup to avoid race with reset_game_history
+    let fen_source = if game_config.mode == GameMode::Lesson && !lesson_setup.fen.is_empty() {
+        &lesson_setup.fen
+    } else {
+        &history.initial_fen
+    };
+    let fen_board = fen_source.split(' ').next()
         .unwrap_or("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
 
     for (rank_idx, rank_str) in fen_board.split('/').enumerate() {
