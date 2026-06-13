@@ -104,7 +104,7 @@ fn sync_suggestion_panel(
         NodeBundle {
             style: Style {
                 position_type: PositionType::Absolute,
-                bottom: Val::Px(16.0),
+                bottom: Val::Px(60.0),
                 left: Val::Px(0.0),
                 right: Val::Px(0.0),
                 justify_content: JustifyContent::Center,
