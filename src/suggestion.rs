@@ -37,16 +37,16 @@ fn handle_suggest_btn(
         let depth_cfg = DifficultyConfig { max_depth: 5, max_nodes: 1_000_000, random_factor: 0.0 };
         let SearchResult::EngineMove(mv, score) = Search::new().best_move(&pos, &depth_cfg);
 
-        let uci   = mv.to_uci();
-        let bytes = uci.as_bytes();
-        if bytes.len() < 4 { continue; }
-        // Skip null moves (from == to)
-        if bytes[0] == bytes[2] && bytes[1] == bytes[3] { continue; }
+        // Use engine square methods directly (same convention as ai.rs):
+        //   engine.rank() → piece.x (Bevy rank, 0 = rank 1)
+        //   engine.file() → piece.y (Bevy file, 0 = file a)
+        let from_rank = mv.from_sq().rank();  // = piece.x
+        let from_file = mv.from_sq().file();  // = piece.y
+        let to_rank   = mv.to_sq().rank();
+        let to_file   = mv.to_sq().file();
 
-        let from_file = bytes[0] - b'a';
-        let from_rank = bytes[1] - b'1';
-        let to_file   = bytes[2] - b'a';
-        let to_rank   = bytes[3] - b'1';
+        // Skip null move
+        if mv.from_sq() == mv.to_sq() { continue; }
 
         let piece_name = pieces.iter()
             .find(|p| p.x == from_rank && p.y == from_file)
