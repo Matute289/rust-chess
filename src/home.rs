@@ -11,9 +11,9 @@ const TIMER_PRESETS_MINS: &[u32] = &[
 // ─── User menu ───────────────────────────────────────────────────────────────
 
 #[derive(Resource, Default)]
-struct UserMenuOpen(bool);
+pub(crate) struct UserMenuOpen(bool);
 
-#[derive(Component)] struct UserMenuRoot;
+#[derive(Component)] pub(crate) struct UserMenuRoot;
 #[derive(Component)] struct BtnUserMenu;
 #[derive(Component)] struct BtnLogout;
 
@@ -129,7 +129,7 @@ fn build_user_menu(
     });
 }
 
-fn spawn_user_menu(
+pub fn spawn_user_menu(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     session: Res<crate::auth::UserSession>,
@@ -138,7 +138,7 @@ fn spawn_user_menu(
     build_user_menu(&mut commands, &asset_server, &session, menu_open.0);
 }
 
-fn despawn_user_menu(mut commands: Commands, q: Query<Entity, With<UserMenuRoot>>) {
+pub fn despawn_user_menu(mut commands: Commands, q: Query<Entity, With<UserMenuRoot>>) {
     for e in &q { commands.entity(e).despawn_recursive(); }
 }
 
@@ -163,6 +163,8 @@ fn handle_logout(
     q: Query<&Interaction, (Changed<Interaction>, With<BtnLogout>)>,
     mut session: ResMut<crate::auth::UserSession>,
     mut menu_open: ResMut<UserMenuOpen>,
+    current_state: Res<State<AppState>>,
+    mut next_state: ResMut<NextState<AppState>>,
     mut home_screen: ResMut<HomeScreen>,
     mut commands: Commands,
     root_q: Query<Entity, With<HomeRoot>>,
@@ -181,8 +183,12 @@ fn handle_logout(
                     }
                 }
             }
-            *home_screen = HomeScreen::ModeSelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ModeSelect, timer_idx.0);
+            if *current_state.get() == AppState::Home {
+                *home_screen = HomeScreen::ModeSelect;
+                rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::ModeSelect, timer_idx.0);
+            } else {
+                next_state.set(AppState::Home);
+            }
         }
     }
 }
@@ -765,10 +771,12 @@ impl Plugin for HomePlugin {
                 handle_no_timer,
                 handle_play,
                 handle_back,
+            ).run_if(in_state(AppState::Home)))
+            .add_systems(Update, (
                 handle_user_menu_btn,
                 handle_logout,
                 refresh_user_menu_on_session_change,
-            ).run_if(in_state(AppState::Home)));
+            ).run_if(in_state(AppState::Home).or_else(in_state(AppState::PvLHub))));
     }
 }
 

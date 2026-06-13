@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use std::sync::{Arc, Mutex};
 use crate::{
     auth::UserSession,
-    home::{HomeEntryScreen, HomeScreen},
+    home::{HomeEntryScreen, HomeScreen, despawn_user_menu, spawn_user_menu},
     state::AppState,
 };
 
@@ -809,8 +809,8 @@ impl Plugin for PvLHubPlugin {
             .init_resource::<StatsFetchState>()
             .init_resource::<LoadedStats>()
             .init_resource::<SummaryPopupText>()
-            .add_systems(OnEnter(AppState::PvLHub), setup_pvl_hub)
-            .add_systems(OnExit(AppState::PvLHub),  despawn_pvl_hub)
+            .add_systems(OnEnter(AppState::PvLHub), (setup_pvl_hub, spawn_user_menu).chain())
+            .add_systems(OnExit(AppState::PvLHub),  (despawn_pvl_hub, despawn_user_menu))
             .add_systems(Update, (
                 highlight_pvl_buttons,
                 highlight_close_btn,
