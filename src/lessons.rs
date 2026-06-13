@@ -464,7 +464,7 @@ async fn fetch_progress_async(jwt: String) -> Option<LoadedProgress> {
 #[cfg(target_arch = "wasm32")]
 pub async fn post_progress_async(jwt: String, lesson_idx: usize, mode: LessonMode) {
     let mode_str = if mode == LessonMode::Interactive { "interactive" } else { "guided" };
-    let body = serde_json::json!({ "lesson_idx": lesson_idx, "mode": mode_str });
+    let body = format!(r#"{{"lesson_idx": {}, "mode": "{}"}}"#, lesson_idx, mode_str);
     let _ = gloo_net::http::Request::post(
         "https://rustchess.greenmountain.dev/api/lesson_progress",
     )
