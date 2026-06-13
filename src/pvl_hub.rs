@@ -316,6 +316,7 @@ fn build_pvl_hub_root(
                     ..default()
                 },
                 background_color: BackgroundColor(Color::rgba(0.04, 0.04, 0.10, 0.97)),
+                z_index: ZIndex::Global(5),
                 ..default()
             },
             PvLHubRoot,
