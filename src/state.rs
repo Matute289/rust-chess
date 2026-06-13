@@ -19,6 +19,8 @@ pub enum AppState {
     Home,
     PvLHub,
     Playing,
+    Lessons,
+    LessonRetry,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -27,6 +29,7 @@ pub enum GameMode {
     PvP,
     PvC,
     PvL,
+    Lesson,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -36,13 +39,33 @@ pub enum PvLMode {
     Adaptativa,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LessonMode {
+    #[default]
+    Interactive,
+    Guided,
+}
+
+#[derive(Resource, Default, Clone)]
+pub struct LessonSetup {
+    pub lesson_idx:   usize,
+    pub exercise_idx: usize,
+    pub fen:          String,
+    pub answer_uci:   String,
+    pub lesson_mode:  LessonMode,
+}
+
+impl LessonSetup {
+    pub fn is_last_exercise(&self) -> bool { self.exercise_idx >= 2 }
+}
+
 #[derive(Resource)]
 pub struct GameConfig {
-    pub mode:       GameMode,
-    pub pvl_mode:   PvLMode,
-    pub difficulty: crate::ai::Difficulty,
+    pub mode:        GameMode,
+    pub pvl_mode:    PvLMode,
+    pub difficulty:  crate::ai::Difficulty,
     pub player_side: PieceColor,
-    pub timer_secs: Option<u32>,
+    pub timer_secs:  Option<u32>,
 }
 
 impl Default for GameConfig {
