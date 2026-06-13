@@ -772,7 +772,8 @@ fn highlight_overlay_btns(
 ) {
     for (i, mut c) in &mut q {
         if *i == Interaction::Hovered {
-            c.0 = Color::rgba(c.0.r() + 0.05, c.0.g() + 0.05, c.0.b() + 0.05, c.0.a());
+            let s = Srgba::from(c.0);
+            c.0 = Color::srgba(s.red + 0.05, s.green + 0.05, s.blue + 0.05, s.alpha);
         }
     }
 }

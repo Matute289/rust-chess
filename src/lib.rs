@@ -5,6 +5,7 @@ mod auth;
 mod board;
 mod captured;
 mod home;
+mod lessons;
 mod persistence;
 mod pieces;
 mod pvl_hub;
@@ -26,7 +27,8 @@ use home::HomePlugin;
 use persistence::PersistencePlugin;
 use pieces::PiecesPlugin;
 use pvl_hub::PvLHubPlugin;
-use state::{AppState, GameConfig, GameMode};
+use lessons::LessonsPlugin;
+use state::{AppState, GameConfig, GameMode, LessonSetup};
 use suggestion::SuggestionPlugin;
 use ui::UIPlugin;
 
@@ -86,6 +88,15 @@ fn on_enter_pvl_hub() {
     hide_game_controls();
 }
 
+fn on_enter_lessons() {
+    #[cfg(target_arch = "wasm32")]
+    hide_game_controls();
+}
+
+fn on_enter_lesson_retry() {
+    // Bounce state — LessonsPlugin::lesson_retry_enter immediately sets Playing.
+}
+
 fn poll_nav_requests(mut next_state: ResMut<NextState<AppState>>) {
     if NAV_TO_HUB.swap(false, Ordering::SeqCst) {
         next_state.set(AppState::PvLHub);
@@ -115,11 +126,14 @@ pub fn run_app() {
         .add_plugins(DefaultPickingPlugins)
         .init_state::<AppState>()
         .init_resource::<GameConfig>()
+        .init_resource::<LessonSetup>()
         .add_plugins(AuthPlugin)
-        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin, SuggestionPlugin, AdaptiveAiPlugin))
+        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin, SuggestionPlugin, AdaptiveAiPlugin, LessonsPlugin))
         .add_systems(OnEnter(AppState::Playing), on_enter_playing)
         .add_systems(OnEnter(AppState::Home),    on_enter_home)
         .add_systems(OnEnter(AppState::PvLHub),  on_enter_pvl_hub)
+        .add_systems(OnEnter(AppState::Lessons),     on_enter_lessons)
+        .add_systems(OnEnter(AppState::LessonRetry), on_enter_lesson_retry)
         .add_systems(Update, poll_nav_requests)
         .add_systems(Startup, setup)
         .run();
