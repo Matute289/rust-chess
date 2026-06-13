@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use std::sync::{Arc, Mutex};
 use crate::{
     auth::UserSession,
+    board::GameHistory,
     state::{AppState, GameConfig, GameMode, LessonMode, LessonSetup},
 };
 
@@ -473,4 +474,348 @@ pub async fn post_progress_async(jwt: String, lesson_idx: usize, mode: LessonMod
     .unwrap()
     .send()
     .await;
+}
+
+// ─── In-game lesson overlay ───────────────────────────────────────────────────
+
+fn setup_lesson_overlay(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    lesson_setup: Res<LessonSetup>,
+    game_config:  Res<GameConfig>,
+) {
+    if game_config.mode != GameMode::Lesson { return; }
+
+    let lesson = &LESSONS[lesson_setup.lesson_idx];
+    let ex     = &lesson.exercises[lesson_setup.exercise_idx];
+    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+
+    let is_guided = lesson_setup.lesson_mode == LessonMode::Guided;
+    let exercise_label = format!(
+        "Lección {} · Ejercicio {}/3: {}",
+        lesson_setup.lesson_idx + 1,
+        lesson_setup.exercise_idx + 1,
+        lesson.title
+    );
+
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type:   PositionType::Absolute,
+                top:             Val::Px(12.0),
+                left:            Val::Px(0.0),
+                right:           Val::Px(0.0),
+                flex_direction:  FlexDirection::Column,
+                align_items:     AlignItems::Center,
+                row_gap:         Val::Px(6.0),
+                ..default()
+            },
+            z_index: ZIndex::Global(15),
+            ..default()
+        },
+        LessonOverlayRoot,
+    ))
+    .with_children(|root| {
+        // Header bar
+        root.spawn(NodeBundle {
+            style: Style {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(10.0),
+                padding: UiRect { left: Val::Px(16.0), right: Val::Px(16.0), top: Val::Px(8.0), bottom: Val::Px(8.0) },
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::rgba(0.04, 0.06, 0.18, 0.92)),
+            border_color: BorderColor(Color::rgba(0.35, 0.35, 0.65, 0.55)),
+            ..default()
+        })
+        .with_children(|bar| {
+            bar.spawn(TextBundle::from_section(
+                exercise_label.as_str(),
+                TextStyle { font: font.clone(), font_size: 19.0, color: Color::rgb(0.90, 0.88, 0.75) },
+            ));
+            if is_guided {
+                bar.spawn((
+                    ButtonBundle {
+                        style: Style {
+                            padding: UiRect { left: Val::Px(14.0), right: Val::Px(14.0), top: Val::Px(6.0), bottom: Val::Px(6.0) },
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::rgba(0.12, 0.30, 0.60, 0.90)),
+                        ..default()
+                    },
+                    BtnLessonHint,
+                ))
+                .with_children(|p| {
+                    p.spawn(TextBundle::from_section("Pista", TextStyle { font: font.clone(), font_size: 16.0, color: Color::rgb(0.80, 0.88, 1.00) }));
+                });
+            }
+            bar.spawn((
+                ButtonBundle {
+                    style: Style { padding: UiRect { left: Val::Px(14.0), right: Val::Px(14.0), top: Val::Px(6.0), bottom: Val::Px(6.0) }, ..default() },
+                    background_color: BackgroundColor(Color::rgba(0.35, 0.20, 0.08, 0.90)),
+                    ..default()
+                },
+                BtnLessonRetry,
+            ))
+            .with_children(|p| {
+                p.spawn(TextBundle::from_section("Reintentar", TextStyle { font: font.clone(), font_size: 16.0, color: Color::rgb(1.00, 0.82, 0.65) }));
+            });
+            bar.spawn((
+                ButtonBundle {
+                    style: Style { padding: UiRect { left: Val::Px(14.0), right: Val::Px(14.0), top: Val::Px(6.0), bottom: Val::Px(6.0) }, ..default() },
+                    background_color: BackgroundColor(Color::rgba(0.30, 0.10, 0.10, 0.90)),
+                    ..default()
+                },
+                BtnLessonExit,
+            ))
+            .with_children(|p| {
+                p.spawn(TextBundle::from_section("Salir", TextStyle { font: font.clone(), font_size: 16.0, color: Color::rgb(1.00, 0.72, 0.72) }));
+            });
+        });
+
+        // Guided hint text panel
+        if is_guided {
+            root.spawn(NodeBundle {
+                style: Style {
+                    max_width: Val::Px(680.0),
+                    padding: UiRect { left: Val::Px(18.0), right: Val::Px(18.0), top: Val::Px(10.0), bottom: Val::Px(10.0) },
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::rgba(0.04, 0.12, 0.28, 0.90)),
+                border_color: BorderColor(Color::rgba(0.28, 0.50, 0.90, 0.50)),
+                ..default()
+            })
+            .with_children(|p| {
+                p.spawn(TextBundle::from_section(
+                    lesson.description,
+                    TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgb(0.80, 0.86, 1.00) },
+                ));
+            });
+        }
+    });
+}
+
+fn despawn_lesson_overlay(
+    mut commands: Commands,
+    q:            Query<Entity, With<LessonOverlayRoot>>,
+    sq:           Query<Entity, With<LessonSuccessOverlay>>,
+) {
+    for e in &q  { commands.entity(e).despawn_recursive(); }
+    for e in &sq { commands.entity(e).despawn_recursive(); }
+}
+
+fn validate_lesson_move(
+    history:      Res<GameHistory>,
+    lesson_setup: Res<LessonSetup>,
+    game_config:  Res<GameConfig>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    overlay_q:    Query<Entity, With<LessonSuccessOverlay>>,
+    session:      Res<UserSession>,
+) {
+    if game_config.mode != GameMode::Lesson { return; }
+    if !history.is_changed() { return; }
+    if history.moves.is_empty() { return; }
+
+    // A move was made — it must be the answer (wrong moves are intercepted in move_piece)
+    for e in &overlay_q { commands.entity(e).despawn_recursive(); }
+
+    // Post progress if last exercise
+    #[cfg(target_arch = "wasm32")]
+    if lesson_setup.is_last_exercise() {
+        if let Some(jwt) = session.jwt.clone() {
+            let lesson_idx  = lesson_setup.lesson_idx;
+            let lesson_mode = lesson_setup.lesson_mode;
+            wasm_bindgen_futures::spawn_local(async move {
+                post_progress_async(jwt, lesson_idx, lesson_mode).await;
+            });
+        }
+    }
+    let _ = session;
+
+    spawn_success_overlay(&mut commands, &asset_server, &lesson_setup);
+}
+
+fn spawn_success_overlay(commands: &mut Commands, asset_server: &AssetServer, setup: &LessonSetup) {
+    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let is_last = setup.is_last_exercise();
+
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                width:  Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                row_gap: Val::Px(24.0),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.0, 0.68)),
+            z_index: ZIndex::Global(40),
+            ..default()
+        },
+        LessonSuccessOverlay,
+    ))
+    .with_children(|root| {
+        let title = if is_last { "¡Lección completada! ★★" } else { "¡Correcto!" };
+        root.spawn(TextBundle::from_section(
+            title,
+            TextStyle { font: font.clone(), font_size: 52.0, color: Color::rgb(0.35, 1.00, 0.45) },
+        ));
+
+        if is_last {
+            root.spawn((
+                ButtonBundle {
+                    style: Style {
+                        padding: UiRect { left: Val::Px(36.0), right: Val::Px(36.0), top: Val::Px(14.0), bottom: Val::Px(14.0) },
+                        justify_content: JustifyContent::Center, align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    background_color: BackgroundColor(Color::rgba(0.18, 0.18, 0.42, 0.95)),
+                    ..default()
+                },
+                BtnLessonFinish,
+            ))
+            .with_children(|p| {
+                p.spawn(TextBundle::from_section("Volver al Currículo", TextStyle { font, font_size: 26.0, color: Color::rgb(0.90, 0.90, 1.00) }));
+            });
+        } else {
+            let label = format!("Siguiente ({}/3)", setup.exercise_idx + 2);
+            root.spawn((
+                ButtonBundle {
+                    style: Style {
+                        padding: UiRect { left: Val::Px(36.0), right: Val::Px(36.0), top: Val::Px(14.0), bottom: Val::Px(14.0) },
+                        justify_content: JustifyContent::Center, align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    background_color: BackgroundColor(Color::rgba(0.12, 0.38, 0.12, 0.95)),
+                    ..default()
+                },
+                BtnLessonNext,
+            ))
+            .with_children(|p| {
+                p.spawn(TextBundle::from_section(label.as_str(), TextStyle { font, font_size: 26.0, color: Color::rgb(0.85, 1.00, 0.85) }));
+            });
+        }
+    });
+}
+
+// ─── In-game button handlers ──────────────────────────────────────────────────
+
+fn handle_lesson_hint(
+    q:            Query<&Interaction, (Changed<Interaction>, With<BtnLessonHint>)>,
+    lesson_setup: Res<LessonSetup>,
+    mut hint:     ResMut<crate::state::Suggestion>,
+) {
+    for i in &q {
+        if *i != Interaction::Pressed { continue; }
+        let b = lesson_setup.answer_uci.as_bytes();
+        if b.len() < 4 { continue; }
+        hint.from_sq = Some((b[1] - b'1', b[0] - b'a'));
+        hint.to_sq   = Some((b[3] - b'1', b[2] - b'a'));
+        hint.text    = Some("Pista: mové la pieza resaltada a la casilla indicada.".to_string());
+    }
+}
+
+fn handle_lesson_retry(
+    q:         Query<&Interaction, (Changed<Interaction>, With<BtnLessonRetry>)>,
+    mut next:  ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed { next.set(AppState::LessonRetry); }
+    }
+}
+
+fn handle_lesson_exit(
+    q:        Query<&Interaction, (Changed<Interaction>, With<BtnLessonExit>)>,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed { next.set(AppState::Lessons); }
+    }
+}
+
+fn handle_lesson_next(
+    q:                Query<&Interaction, (Changed<Interaction>, With<BtnLessonNext>)>,
+    mut lesson_setup: ResMut<LessonSetup>,
+    mut next:         ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i != Interaction::Pressed { continue; }
+        lesson_setup.exercise_idx += 1;
+        let ex = &LESSONS[lesson_setup.lesson_idx].exercises[lesson_setup.exercise_idx];
+        lesson_setup.fen         = ex.fen.to_string();
+        lesson_setup.answer_uci  = ex.answer_uci.to_string();
+        next.set(AppState::LessonRetry);
+    }
+}
+
+fn handle_lesson_finish(
+    q:        Query<&Interaction, (Changed<Interaction>, With<BtnLessonFinish>)>,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed { next.set(AppState::Lessons); }
+    }
+}
+
+fn highlight_overlay_btns(
+    mut q: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, Or<(With<BtnLessonNext>, With<BtnLessonFinish>, With<BtnLessonRetry>, With<BtnLessonExit>, With<BtnLessonHint>)>),
+    >,
+) {
+    for (i, mut c) in &mut q {
+        if *i == Interaction::Hovered {
+            c.0 = Color::rgba(c.0.r() + 0.05, c.0.g() + 0.05, c.0.b() + 0.05, c.0.a());
+        }
+    }
+}
+
+fn lesson_retry_enter(mut next: ResMut<NextState<AppState>>) {
+    next.set(AppState::Playing);
+}
+
+// ─── Plugin ───────────────────────────────────────────────────────────────────
+
+pub struct LessonsPlugin;
+
+impl Plugin for LessonsPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .init_resource::<ProgressFetchState>()
+            .init_resource::<CachedProgress>()
+            .init_resource::<SelectedLessonMode>()
+            // Lessons screen
+            .add_systems(OnEnter(AppState::Lessons),  setup_lessons)
+            .add_systems(OnExit(AppState::Lessons),   despawn_lessons)
+            .add_systems(Update, (
+                handle_lesson_start,
+                handle_lessons_back,
+                handle_mode_interactive,
+                handle_mode_guided,
+                highlight_lesson_btns,
+                highlight_nav_btns,
+                poll_progress_result,
+            ).run_if(in_state(AppState::Lessons)))
+            // Playing overlay (runs whenever mode == Lesson)
+            .add_systems(OnEnter(AppState::Playing),  setup_lesson_overlay)
+            .add_systems(OnExit(AppState::Playing),   despawn_lesson_overlay)
+            .add_systems(Update, (
+                validate_lesson_move,
+                handle_lesson_hint,
+                handle_lesson_retry,
+                handle_lesson_exit,
+                handle_lesson_next,
+                handle_lesson_finish,
+                highlight_overlay_btns,
+            ).run_if(in_state(AppState::Playing)))
+            // LessonRetry bounce: immediately re-enters Playing
+            .add_systems(OnEnter(AppState::LessonRetry), lesson_retry_enter);
+    }
 }
