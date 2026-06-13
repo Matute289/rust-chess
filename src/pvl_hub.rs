@@ -54,6 +54,7 @@ struct LoadedStats(Option<FetchedStats>);
 #[derive(Component)] struct BtnPvLJugar;
 #[derive(Component)] struct BtnPvLAdaptativa;
 #[derive(Component)] struct BtnPvLBack;
+#[derive(Component)] struct BtnPvLLecciones;
 #[derive(Component)] struct BtnPvLOAuth(pub &'static str);
 #[derive(Component)] pub struct EloTooltipTrigger;
 #[derive(Component)] struct EloTooltipPanel;
@@ -425,7 +426,7 @@ fn build_pvl_hub_root(
                 spacer(root, 8.0);
                 make_btn(root, font.clone(), "Jugar partida Learning", BtnPvLJugar);
                 make_btn(root, font.clone(), "vs IA Adaptativa", BtnPvLAdaptativa);
-                make_disabled_btn(root, font.clone(), "Currículo de Lecciones");
+                make_btn(root, font.clone(), "Currículo de Lecciones", BtnPvLLecciones);
                 spacer(root, 16.0);
                 make_btn(root, font.clone(), "← Volver", BtnPvLBack);
             }
@@ -571,6 +572,17 @@ fn handle_pvl_adaptativa(
             config.pvl_mode = PvLMode::Adaptativa;
             entry.0         = HomeScreen::ColorSelect;
             next_state.set(AppState::Home);
+        }
+    }
+}
+
+fn handle_pvl_lecciones(
+    q:              Query<&Interaction, (Changed<Interaction>, With<BtnPvLLecciones>)>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            next_state.set(AppState::Lessons);
         }
     }
 }
@@ -839,6 +851,7 @@ impl Plugin for PvLHubPlugin {
                 poll_stats_result,
                 handle_pvl_jugar,
                 handle_pvl_adaptativa,
+                handle_pvl_lecciones,
                 handle_pvl_oauth,
                 handle_pvl_back,
                 handle_summary_btn,
