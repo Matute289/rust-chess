@@ -29,9 +29,17 @@ pub enum GameMode {
     PvL,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PvLMode {
+    #[default]
+    Standard,
+    Adaptativa,
+}
+
 #[derive(Resource)]
 pub struct GameConfig {
-    pub mode: GameMode,
+    pub mode:       GameMode,
+    pub pvl_mode:   PvLMode,
     pub difficulty: crate::ai::Difficulty,
     pub player_side: PieceColor,
     pub timer_secs: Option<u32>,
@@ -40,10 +48,11 @@ pub struct GameConfig {
 impl Default for GameConfig {
     fn default() -> Self {
         Self {
-            mode: GameMode::default(),
-            difficulty: crate::ai::Difficulty::default(),
+            mode:        GameMode::default(),
+            pvl_mode:    PvLMode::default(),
+            difficulty:  crate::ai::Difficulty::default(),
             player_side: PieceColor::White,
-            timer_secs: None,
+            timer_secs:  None,
         }
     }
 }

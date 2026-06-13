@@ -1,3 +1,4 @@
+mod adaptive_ai;
 mod ai;
 mod analysis;
 mod auth;
@@ -14,6 +15,7 @@ mod ui;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
+use adaptive_ai::AdaptiveAiPlugin;
 use ai::AIPlugin;
 use analysis::AnalysisPlugin;
 use auth::AuthPlugin;
@@ -82,7 +84,7 @@ pub fn run_app() {
         .init_state::<AppState>()
         .init_resource::<GameConfig>()
         .add_plugins(AuthPlugin)
-        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin, SuggestionPlugin))
+        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin, SuggestionPlugin, AdaptiveAiPlugin))
         .add_systems(OnEnter(AppState::Playing), on_enter_playing)
         .add_systems(OnEnter(AppState::Home),    on_enter_home)
         .add_systems(OnEnter(AppState::PvLHub),  on_enter_pvl_hub)

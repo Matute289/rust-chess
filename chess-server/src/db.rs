@@ -98,6 +98,51 @@ pub async fn insert_game_and_update_elo(
     Ok(game_id)
 }
 
+pub async fn get_or_create_ai_profile(
+    pool:    &PgPool,
+    user_id: Uuid,
+) -> anyhow::Result<crate::ai_profile::AiProfileRow> {
+    let row = sqlx::query_as::<_, crate::ai_profile::AiProfileRow>(
+        r#"
+        INSERT INTO ai_profiles (user_id) VALUES ($1)
+        ON CONFLICT (user_id) DO UPDATE SET updated_at = ai_profiles.updated_at
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn update_ai_profile(
+    pool:         &PgPool,
+    user_id:      Uuid,
+    elo_estimate: i32,
+    loss_count:   i32,
+    biases_json:  serde_json::Value,
+) -> anyhow::Result<crate::ai_profile::AiProfileRow> {
+    let row = sqlx::query_as::<_, crate::ai_profile::AiProfileRow>(
+        r#"
+        INSERT INTO ai_profiles (user_id, elo_estimate, loss_count, learned_biases)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id) DO UPDATE
+            SET elo_estimate   = EXCLUDED.elo_estimate,
+                loss_count     = EXCLUDED.loss_count,
+                learned_biases = EXCLUDED.learned_biases,
+                updated_at     = NOW()
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .bind(elo_estimate)
+    .bind(loss_count)
+    .bind(biases_json)
+    .fetch_one(pool)
+    .await?;
+    Ok(row)
+}
+
 pub async fn store_oauth_state(pool: &PgPool, state: &str, provider: &str) -> anyhow::Result<()> {
     sqlx::query("INSERT INTO oauth_states (state, provider) VALUES ($1, $2) ON CONFLICT DO NOTHING")
         .bind(state)

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use crate::ai::Difficulty;
-use crate::state::{AppState, GameConfig, GameMode};
+use crate::state::{AppState, GameConfig, GameMode, PvLMode};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -595,25 +595,36 @@ fn handle_oauth(
 fn handle_color_select(
     white_q: Query<&Interaction, (Changed<Interaction>, With<BtnSideWhite>)>,
     black_q: Query<&Interaction, (Changed<Interaction>, With<BtnSideBlack>)>,
-    mut config: ResMut<GameConfig>,
+    mut config:      ResMut<GameConfig>,
     mut home_screen: ResMut<HomeScreen>,
-    mut commands: Commands,
-    root_q: Query<Entity, With<HomeRoot>>,
-    asset_server: Res<AssetServer>,
-    timer_idx: Res<SelectedTimerIdx>,
+    mut commands:    Commands,
+    root_q:          Query<Entity, With<HomeRoot>>,
+    asset_server:    Res<AssetServer>,
+    timer_idx:       Res<SelectedTimerIdx>,
+    mut next_state:  ResMut<NextState<AppState>>,
 ) {
+    let adaptativa = config.mode == GameMode::PvL && config.pvl_mode == PvLMode::Adaptativa;
+
     for i in &white_q {
         if *i == Interaction::Pressed {
             config.player_side = crate::pieces::PieceColor::White;
-            *home_screen = HomeScreen::DifficultySelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect, timer_idx.0);
+            if adaptativa {
+                next_state.set(AppState::Playing);
+            } else {
+                *home_screen = HomeScreen::DifficultySelect;
+                rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect, timer_idx.0);
+            }
         }
     }
     for i in &black_q {
         if *i == Interaction::Pressed {
             config.player_side = crate::pieces::PieceColor::Black;
-            *home_screen = HomeScreen::DifficultySelect;
-            rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect, timer_idx.0);
+            if adaptativa {
+                next_state.set(AppState::Playing);
+            } else {
+                *home_screen = HomeScreen::DifficultySelect;
+                rebuild_home(&mut commands, &asset_server, &root_q, HomeScreen::DifficultySelect, timer_idx.0);
+            }
         }
     }
 }

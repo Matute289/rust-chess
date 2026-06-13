@@ -1,3 +1,4 @@
+mod ai_profile;
 mod auth;
 mod config;
 mod db;
@@ -47,6 +48,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/me",                        get(auth::me))
         .route("/api/games",                     post(games::post_game))
         .route("/api/stats",                     get(stats::get_stats))
+        .route("/api/ai_profile",                get(ai_profile::get_ai_profile))
+        .route("/api/ai_profile",                axum::routing::patch(ai_profile::patch_ai_profile))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);

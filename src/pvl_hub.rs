@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     auth::UserSession,
     home::{HomeEntryScreen, HomeScreen, despawn_user_menu, spawn_user_menu},
-    state::AppState,
+    state::{AppState, GameConfig, GameMode, PvLMode},
 };
 
 // ─── Resources ────────────────────────────────────────────────────────────────
@@ -53,6 +53,7 @@ struct LoadedStats(Option<FetchedStats>);
 #[derive(Component)] struct PvLHubRoot;
 #[derive(Component)] struct BtnPvLJugar;
 #[derive(Component)] struct BtnPvLConSugerencias;
+#[derive(Component)] struct BtnPvLAdaptativa;
 #[derive(Component)] struct BtnPvLBack;
 #[derive(Component)] struct BtnPvLOAuth(pub &'static str);
 #[derive(Component)] pub struct EloTooltipTrigger;
@@ -424,7 +425,7 @@ fn build_pvl_hub_root(
 
                 spacer(root, 8.0);
                 make_btn(root, font.clone(), "Jugar partida Learning", BtnPvLJugar);
-                make_disabled_btn(root, font.clone(), "vs IA Adaptativa");
+                make_btn(root, font.clone(), "vs IA Adaptativa", BtnPvLAdaptativa);
                 make_btn(root, font.clone(), "Con Sugerencias", BtnPvLConSugerencias);
                 make_disabled_btn(root, font.clone(), "Currículo de Lecciones");
                 spacer(root, 16.0);
@@ -565,6 +566,22 @@ fn handle_pvl_con_sugerencias(
     for i in &q {
         if *i == Interaction::Pressed {
             entry.0 = HomeScreen::ColorSelect;
+            next_state.set(AppState::Home);
+        }
+    }
+}
+
+fn handle_pvl_adaptativa(
+    q:              Query<&Interaction, (Changed<Interaction>, With<BtnPvLAdaptativa>)>,
+    mut entry:      ResMut<HomeEntryScreen>,
+    mut config:     ResMut<GameConfig>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            config.mode     = GameMode::PvL;
+            config.pvl_mode = PvLMode::Adaptativa;
+            entry.0         = HomeScreen::ColorSelect;
             next_state.set(AppState::Home);
         }
     }
@@ -834,6 +851,7 @@ impl Plugin for PvLHubPlugin {
                 poll_stats_result,
                 handle_pvl_jugar,
                 handle_pvl_con_sugerencias,
+                handle_pvl_adaptativa,
                 handle_pvl_oauth,
                 handle_pvl_back,
                 handle_summary_btn,

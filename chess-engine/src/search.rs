@@ -149,6 +149,19 @@ impl Search {
         }
     }
 
+    /// Like `new()` but pre-seeds the history table with learned biases.
+    /// Each entry is (from_sq_index, to_sq_index, delta). Negative deltas
+    /// de-prioritize moves that were blunders in past games.
+    pub fn with_biases(biases: &[(u8, u8, i32)]) -> Search {
+        let mut s = Search::new();
+        for &(from, to, delta) in biases {
+            let f = from as usize;
+            let t = to   as usize;
+            s.history[f][t] = s.history[f][t].saturating_add(delta);
+        }
+        s
+    }
+
     /// Returns the best move for the given position and difficulty.
     pub fn best_move(&mut self, pos: &Position, config: &DifficultyConfig) -> SearchResult {
         self.nodes = 0;

@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use crate::board::{CastlingState, GameHistory, GameStatus, GameStatusEvent, PlayerTurn, Taken};
 use crate::pieces::{Piece, PieceColor, PieceType};
-use crate::state::{AppState, GameConfig, GameMode};
+use crate::adaptive_ai::AdaptiveAiProfile;
+use crate::state::{AppState, GameConfig, GameMode, PvLMode};
 use chess_engine::{
     DifficultyConfig, MoveFlag, Position, Search, SearchResult,
 };
@@ -175,13 +176,14 @@ fn ai_schedule_think(
 /// search and store the result. This frame will stutter on hard/pro because
 /// the search blocks; that is unavoidable in single-threaded WASM.
 fn ai_tick_and_compute(
-    time: Res<Time>,
-    mut phase: ResMut<AiPhase>,
+    time:        Res<Time>,
+    mut phase:   ResMut<AiPhase>,
     castling_state: Res<CastlingState>,
-    difficulty: Res<Difficulty>,
+    difficulty:  Res<Difficulty>,
     pieces_query: Query<&Piece>,
     game_config: Res<GameConfig>,
-    en_passant:    Res<crate::board::EnPassantTarget>,
+    en_passant:  Res<crate::board::EnPassantTarget>,
+    adaptive:    Res<AdaptiveAiProfile>,
 ) {
     let timer_done = match &mut *phase {
         AiPhase::WaitBeforeThink(timer) => {
@@ -205,8 +207,29 @@ fn ai_tick_and_compute(
         Err(e) => { eprintln!("AI: invalid FEN '{}': {}", fen, e); *phase = AiPhase::Idle; return; }
     };
 
-    let mut search = Search::new();
-    match search.best_move(&pos, &difficulty.config()) {
+    let diff_cfg = if game_config.mode == GameMode::PvL
+        && game_config.pvl_mode == PvLMode::Adaptativa
+        && adaptive.loaded
+    {
+        DifficultyConfig {
+            max_depth:     adaptive.elo_to_depth(),
+            max_nodes:     2_000_000,
+            random_factor: 0.0,
+        }
+    } else {
+        difficulty.config()
+    };
+
+    let mut search = if game_config.mode == GameMode::PvL
+        && game_config.pvl_mode == PvLMode::Adaptativa
+        && !adaptive.biases.is_empty()
+    {
+        Search::with_biases(&adaptive.biases)
+    } else {
+        Search::new()
+    };
+
+    match search.best_move(&pos, &diff_cfg) {
         SearchResult::EngineMove(mv, score) => {
             eprintln!("AI: {} (score {})", mv.to_uci(), score);
             *phase = AiPhase::Ready(mv);

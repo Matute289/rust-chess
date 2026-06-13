@@ -2,7 +2,8 @@ use bevy::prelude::*;
 use crate::analysis::{AnalysisReport, GameNarrative};
 use crate::board::{GameStatus, GameStatusEvent, PlayerTurn};
 use crate::pieces::PieceColor;
-use crate::state::{AppState, GameConfig, GameMode};
+use crate::adaptive_ai::AdaptiveAiProfile;
+use crate::state::{AppState, GameConfig, GameMode, PvLMode};
 use crate::suggestion::BtnSuggest;
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -30,8 +31,9 @@ struct TurnTimer {
 fn spawn_hud(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    config: Res<GameConfig>,
-    session: Res<crate::auth::UserSession>,
+    config:   Res<GameConfig>,
+    session:  Res<crate::auth::UserSession>,
+    adaptive: Res<AdaptiveAiProfile>,
 ) {
     let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
 
@@ -68,6 +70,17 @@ fn spawn_hud(
                 mode_label,
                 TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.6, 0.6, 0.8) },
             ));
+            if config.mode == GameMode::PvL && config.pvl_mode == PvLMode::Adaptativa {
+                let elo_label = if adaptive.loaded {
+                    format!("IA Nivel {} (ELO {})", adaptive.elo_to_depth(), adaptive.elo_estimate)
+                } else {
+                    "IA Adaptativa (cargando…)".to_string()
+                };
+                parent.spawn(TextBundle::from_section(
+                    elo_label,
+                    TextStyle { font: font.clone(), font_size: 18.0, color: Color::rgb(0.8, 0.65, 0.3) },
+                ));
+            }
             if let Some(name) = &session.display_name {
                 parent.spawn(TextBundle::from_section(
                     format!("Jugador: {}", name),
