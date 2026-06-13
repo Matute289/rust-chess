@@ -22,9 +22,9 @@ The two pillars:
 | 1 — Backend + Auth | ✅ Done | chess-server crate, OAuth Google/GitHub/Discord, JWT, chess-db. /api/me called post-login to populate display_name/elo. User menu chip (top-right, persiste en PvLHub) con logout. PNG icons en assets/icons/. |
 | 2 — Game Persistence + ELO | ✅ Done | persist_on_game_end en persistence.rs. POST /api/games con payload completo (mode, result, accuracy, blunders/mistakes/inaccuracies, moves_uci, summary). ELO calculado con K=32 en el backend. |
 | 3 — User Dashboard (stats screen) | ✅ Done (en PvLHub) | Stats integradas en el PvL Hub: ELO con tooltip, win/loss/draw totals, accuracy promedio, blunders/errores/inexactos totales, tabla de últimas 5 partidas con scrolling. Narrativa coloquial en español guardada por partida y visible con botón "ver". |
-| 4 — PvL: vs IA Adaptativa | 🔲 Pending (3°) | |
-| 5 — PvL: Con Sugerencias | 🔲 Pending (1° — siguiente) | |
-| 6 — PvL: Currículo de Lecciones | 🔲 Pending (2°) | |
+| 4 — PvL: vs IA Adaptativa | 🔲 Pending (2°) | |
+| 5 — PvL: Con Sugerencias | ✅ Done | Botón "Sugerir" en PvL (top-right). Engine depth 5. Casillas from/to resaltadas en azul. Panel flotante con texto: pieza, casillas, calidad. Botón X para cerrar. Se limpia al mover o salir. |
+| 6 — PvL: Currículo de Lecciones | 🔲 Pending (3°) | |
 
 ---
 
