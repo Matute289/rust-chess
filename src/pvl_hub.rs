@@ -59,6 +59,7 @@ struct LoadedStats(Option<FetchedStats>);
 #[derive(Component)] struct BtnSummary(String);
 #[derive(Component)] struct BtnSummaryClose;
 #[derive(Component)] struct SummaryPopupOverlay;
+#[derive(Component)] struct ScrollableGamesContent;
 
 #[derive(Resource, Default)]
 struct SummaryPopupText(Option<String>);
@@ -180,89 +181,116 @@ fn build_games_table(parent: &mut ChildBuilder, font: Handle<Font>, games: &[Rec
     ];
     build_table_row(parent, font.clone(), header_cells, &col_widths, 14.0);
 
-    for game in games {
-        let id_short: String = game.id.chars().take(8).collect();
-
-        let (result_text, result_color) = match game.result.as_str() {
-            "win"  => ("Victoria", Color::rgb(0.45, 0.85, 0.50)),
-            "loss" => ("Derrota",  Color::rgb(0.90, 0.42, 0.42)),
-            _      => ("Tablas",   Color::rgb(0.60, 0.60, 0.78)),
-        };
-
-        let avg_acc = match (game.accuracy_white, game.accuracy_black) {
-            (Some(w), Some(b)) => format!("{:.1}%", (w + b) / 2.0),
-            (Some(w), None)    => format!("{:.1}%", w),
-            (None,    Some(b)) => format!("{:.1}%", b),
-            _                  => "-".to_string(),
-        };
-
-        let blunders_s     = game.blunders.to_string();
-        let mistakes_s     = game.mistakes.to_string();
-        let inaccuracies_s = game.inaccuracies.to_string();
-
-        let data_cells: &[(&str, Color)] = &[
-            (id_short.as_str(),       Color::rgb(0.65, 0.65, 0.78)),
-            (result_text,             result_color),
-            (avg_acc.as_str(),        Color::rgb(0.80, 0.80, 0.90)),
-            (blunders_s.as_str(),     Color::rgb(0.90, 0.48, 0.48)),
-            (mistakes_s.as_str(),     Color::rgb(0.88, 0.72, 0.38)),
-            (inaccuracies_s.as_str(), Color::rgb(0.70, 0.70, 0.88)),
-        ];
-        // Data row: first 6 text columns + optional (ver) button
-        parent.spawn(NodeBundle {
-            style: Style { flex_direction: FlexDirection::Row, ..default() },
+    // Clipping viewport — fixed height so the card never grows with more games
+    parent.spawn(NodeBundle {
+        style: Style {
+            height: Val::Px(140.0),
+            overflow: Overflow::clip_y(),
+            width: Val::Percent(100.0),
             ..default()
-        })
-        .with_children(|row| {
-            for ((text, color), &width) in data_cells.iter().zip(col_widths.iter()) {
-                row.spawn(NodeBundle {
-                    style: Style {
-                        width: Val::Px(width),
-                        padding: UiRect { left: Val::Px(4.0), right: Val::Px(4.0), top: Val::Px(3.0), bottom: Val::Px(3.0) },
-                        ..default()
-                    },
+        },
+        ..default()
+    })
+    .with_children(|viewport| {
+        viewport.spawn((
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    width: Val::Percent(100.0),
+                    top: Val::Px(0.0),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                ..default()
+            },
+            ScrollableGamesContent,
+        ))
+        .with_children(|scroller| {
+            for game in games {
+                let id_short: String = game.id.chars().take(8).collect();
+
+                let (result_text, result_color) = match game.result.as_str() {
+                    "win"  => ("Victoria", Color::rgb(0.45, 0.85, 0.50)),
+                    "loss" => ("Derrota",  Color::rgb(0.90, 0.42, 0.42)),
+                    _      => ("Tablas",   Color::rgb(0.60, 0.60, 0.78)),
+                };
+
+                let avg_acc = match (game.accuracy_white, game.accuracy_black) {
+                    (Some(w), Some(b)) => format!("{:.1}%", (w + b) / 2.0),
+                    (Some(w), None)    => format!("{:.1}%", w),
+                    (None,    Some(b)) => format!("{:.1}%", b),
+                    _                  => "-".to_string(),
+                };
+
+                let blunders_s     = game.blunders.to_string();
+                let mistakes_s     = game.mistakes.to_string();
+                let inaccuracies_s = game.inaccuracies.to_string();
+
+                let data_cells: &[(&str, Color)] = &[
+                    (id_short.as_str(),       Color::rgb(0.65, 0.65, 0.78)),
+                    (result_text,             result_color),
+                    (avg_acc.as_str(),        Color::rgb(0.80, 0.80, 0.90)),
+                    (blunders_s.as_str(),     Color::rgb(0.90, 0.48, 0.48)),
+                    (mistakes_s.as_str(),     Color::rgb(0.88, 0.72, 0.38)),
+                    (inaccuracies_s.as_str(), Color::rgb(0.70, 0.70, 0.88)),
+                ];
+                // Data row: first 6 text columns + optional (ver) button
+                scroller.spawn(NodeBundle {
+                    style: Style { flex_direction: FlexDirection::Row, ..default() },
                     ..default()
                 })
-                .with_children(|cell| {
-                    cell.spawn(TextBundle::from_section(
-                        *text,
-                        TextStyle { font: font.clone(), font_size: 14.0, color: *color },
-                    ));
-                });
-            }
-            // (ver) button — last column
-            let ver_width = col_widths[6];
-            if let Some(summary_text) = &game.summary {
-                row.spawn((
-                    ButtonBundle {
-                        style: Style {
-                            width: Val::Px(ver_width),
-                            height: Val::Px(24.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            padding: UiRect::axes(Val::Px(4.0), Val::Px(2.0)),
+                .with_children(|row| {
+                    for ((text, color), &width) in data_cells.iter().zip(col_widths.iter()) {
+                        row.spawn(NodeBundle {
+                            style: Style {
+                                width: Val::Px(width),
+                                padding: UiRect { left: Val::Px(4.0), right: Val::Px(4.0), top: Val::Px(3.0), bottom: Val::Px(3.0) },
+                                ..default()
+                            },
                             ..default()
-                        },
-                        background_color: BackgroundColor(Color::rgba(0.15, 0.25, 0.45, 0.85)),
-                        border_color: BorderColor(Color::rgba(0.35, 0.45, 0.70, 0.60)),
-                        ..default()
-                    },
-                    BtnSummary(summary_text.clone()),
-                ))
-                .with_children(|p| {
-                    p.spawn(TextBundle::from_section(
-                        "ver",
-                        TextStyle { font: font.clone(), font_size: 13.0, color: Color::rgb(0.70, 0.80, 0.95) },
-                    ));
-                });
-            } else {
-                row.spawn(NodeBundle {
-                    style: Style { width: Val::Px(ver_width), ..default() },
-                    ..default()
+                        })
+                        .with_children(|cell| {
+                            cell.spawn(TextBundle::from_section(
+                                *text,
+                                TextStyle { font: font.clone(), font_size: 14.0, color: *color },
+                            ));
+                        });
+                    }
+                    // (ver) button — last column
+                    let ver_width = col_widths[6];
+                    if let Some(summary_text) = &game.summary {
+                        row.spawn((
+                            ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(ver_width),
+                                    height: Val::Px(24.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect::axes(Val::Px(4.0), Val::Px(2.0)),
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::rgba(0.15, 0.25, 0.45, 0.85)),
+                                border_color: BorderColor(Color::rgba(0.35, 0.45, 0.70, 0.60)),
+                                ..default()
+                            },
+                            BtnSummary(summary_text.clone()),
+                        ))
+                        .with_children(|p| {
+                            p.spawn(TextBundle::from_section(
+                                "ver",
+                                TextStyle { font: font.clone(), font_size: 13.0, color: Color::rgb(0.70, 0.80, 0.95) },
+                            ));
+                        });
+                    } else {
+                        row.spawn(NodeBundle {
+                            style: Style { width: Val::Px(ver_width), ..default() },
+                            ..default()
+                        });
+                    }
                 });
             }
         });
-    }
+    });
 }
 
 // ─── UI builder ──────────────────────────────────────────────────────────────
@@ -751,6 +779,25 @@ async fn fetch_stats_async(jwt: String) -> Option<FetchedStats> {
     })
 }
 
+fn scroll_games_table(
+    mut wheel_events: EventReader<bevy::input::mouse::MouseWheel>,
+    mut q: Query<&mut Style, With<ScrollableGamesContent>>,
+) {
+    use bevy::input::mouse::MouseScrollUnit;
+    let mut delta = 0.0f32;
+    for ev in wheel_events.read() {
+        delta += match ev.unit {
+            MouseScrollUnit::Line  => ev.y * 24.0,
+            MouseScrollUnit::Pixel => ev.y,
+        };
+    }
+    if delta == 0.0 { return; }
+    for mut style in &mut q {
+        let current = match style.top { Val::Px(v) => v, _ => 0.0 };
+        style.top = Val::Px((current + delta).min(0.0).max(-300.0));
+    }
+}
+
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
 pub struct PvLHubPlugin;
@@ -776,6 +823,7 @@ impl Plugin for PvLHubPlugin {
                 handle_summary_btn,
                 sync_summary_popup,
                 handle_summary_close,
+                scroll_games_table,
             ).run_if(in_state(AppState::PvLHub)));
     }
 }

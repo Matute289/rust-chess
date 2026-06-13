@@ -10,6 +10,7 @@ use crate::state::{AppState, GameConfig, GameMode};
 #[derive(Component)] struct GameOverOverlay;
 #[derive(Component)] struct BtnRetry;
 #[derive(Component)] struct BtnHome;
+#[derive(Component)] struct BtnPvLHub;
 #[derive(Component)] struct CheckBanner;
 #[derive(Component)] struct TurnText;
 #[derive(Component)] struct ThinkingBanner;
@@ -113,12 +114,18 @@ fn update_turn_text(
 }
 
 fn handle_new_game_btn(
-    q: Query<&Interaction, (Changed<Interaction>, With<BtnHome>)>,
+    home_q: Query<&Interaction, (Changed<Interaction>, With<BtnHome>)>,
+    pvl_q:  Query<&Interaction, (Changed<Interaction>, With<BtnPvLHub>)>,
     mut next_state: ResMut<NextState<AppState>>,
 ) {
-    for interaction in &q {
+    for interaction in &home_q {
         if *interaction == Interaction::Pressed {
             next_state.set(AppState::Home);
+        }
+    }
+    for interaction in &pvl_q {
+        if *interaction == Interaction::Pressed {
+            next_state.set(AppState::PvLHub);
         }
     }
 }
@@ -129,6 +136,7 @@ fn handle_status_events(
     asset_server:    Res<AssetServer>,
     analysis_report: Res<AnalysisReport>,
     narrative:       Res<GameNarrative>,
+    config:          Res<GameConfig>,
     overlay_q:       Query<Entity, With<GameOverOverlay>>,
     banner_q:        Query<Entity, With<CheckBanner>>,
     mut timer:       ResMut<TurnTimer>,
@@ -168,13 +176,13 @@ fn handle_status_events(
                     PieceColor::Black => "¡Jaque Mate! ¡Negras ganan!",
                 };
                 spawn_game_over_overlay(&mut commands, &asset_server, winner_str, false,
-                    analysis_report.0.as_ref(), narrative.0.as_deref());
+                    analysis_report.0.as_ref(), narrative.0.as_deref(), config.mode);
             }
             GameStatus::Stalemate => {
                 timer.disabled = true;
                 for e in &overlay_q { commands.entity(e).despawn_recursive(); }
                 spawn_game_over_overlay(&mut commands, &asset_server, "¡Empate por ahogado!", true,
-                    analysis_report.0.as_ref(), narrative.0.as_deref());
+                    analysis_report.0.as_ref(), narrative.0.as_deref(), config.mode);
             }
         }
     }
@@ -187,6 +195,7 @@ fn spawn_game_over_overlay(
     is_draw:      bool,
     report:       Option<&chess_engine::GameReport>,
     narrative:    Option<&str>,
+    game_mode:    GameMode,
 ) {
     let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
 
@@ -351,26 +360,77 @@ fn spawn_game_over_overlay(
                 });
             }
 
-            // Home button
-            root.spawn((
-                ButtonBundle {
+            // Navigation buttons
+            if game_mode == GameMode::PvL {
+                root.spawn(NodeBundle {
                     style: Style {
-                        width: Val::Px(260.0), height: Val::Px(60.0),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(16.0),
                         ..default()
                     },
-                    background_color: BackgroundColor(Color::rgba(0.3, 0.1, 0.1, 0.9)),
                     ..default()
-                },
-                BtnHome,
-            ))
-            .with_children(|p| {
-                p.spawn(TextBundle::from_section(
-                    "Menú principal",
-                    TextStyle { font, font_size: 30.0, color: Color::rgb(0.9, 0.9, 0.9) },
-                ));
-            });
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                width: Val::Px(220.0), height: Val::Px(60.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: BackgroundColor(Color::rgba(0.1, 0.20, 0.50, 0.9)),
+                            ..default()
+                        },
+                        BtnPvLHub,
+                    ))
+                    .with_children(|p| {
+                        p.spawn(TextBundle::from_section(
+                            "Menu Learning",
+                            TextStyle { font: font.clone(), font_size: 26.0, color: Color::rgb(0.9, 0.9, 0.9) },
+                        ));
+                    });
+                    row.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                width: Val::Px(220.0), height: Val::Px(60.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: BackgroundColor(Color::rgba(0.3, 0.1, 0.1, 0.9)),
+                            ..default()
+                        },
+                        BtnHome,
+                    ))
+                    .with_children(|p| {
+                        p.spawn(TextBundle::from_section(
+                            "Menú principal",
+                            TextStyle { font, font_size: 26.0, color: Color::rgb(0.9, 0.9, 0.9) },
+                        ));
+                    });
+                });
+            } else {
+                root.spawn((
+                    ButtonBundle {
+                        style: Style {
+                            width: Val::Px(260.0), height: Val::Px(60.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::rgba(0.3, 0.1, 0.1, 0.9)),
+                        ..default()
+                    },
+                    BtnHome,
+                ))
+                .with_children(|p| {
+                    p.spawn(TextBundle::from_section(
+                        "Menú principal",
+                        TextStyle { font, font_size: 30.0, color: Color::rgb(0.9, 0.9, 0.9) },
+                    ));
+                });
+            }
         });
 }
 
