@@ -49,7 +49,7 @@ fn handle_suggest_btn(
         let to_rank   = bytes[3] - b'1';
 
         let piece_name = pieces.iter()
-            .find(|p| p.x == from_file && p.y == from_rank)
+            .find(|p| p.x == from_rank && p.y == from_file)
             .map(|p| match p.piece_type {
                 PieceType::Pawn   => "peón",
                 PieceType::Knight => "caballo",
@@ -68,8 +68,8 @@ fn handle_suggest_btn(
                       else if score >= 0  { "Jugada sólida" }
                       else { "Mejor opción disponible" };
 
-        s.from_sq = Some((from_file, from_rank));
-        s.to_sq   = Some((to_file,   to_rank));
+        s.from_sq = Some((from_rank, from_file));
+        s.to_sq   = Some((to_rank,   to_file));
         s.text    = Some(format!("Mueve el {} de {} a {}  —  {}", piece_name, from_label, to_label, quality));
     }
 }
