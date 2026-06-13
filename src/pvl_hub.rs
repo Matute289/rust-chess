@@ -304,7 +304,7 @@ fn build_pvl_hub_root(
     session: &UserSession,
     stats: &Option<FetchedStats>,
 ) {
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     commands
         .spawn((
@@ -622,7 +622,7 @@ fn handle_pvl_back(
 // ─── Summary popup ────────────────────────────────────────────────────────────
 
 fn spawn_summary_popup(commands: &mut Commands, asset_server: &AssetServer, text: &str) {
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     commands.spawn((
         NodeBundle {

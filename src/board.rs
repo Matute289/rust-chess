@@ -796,7 +796,7 @@ fn show_castling_button(
     for e in root_q.iter() { commands.entity(e).despawn_recursive(); }
     if !pending.is_pending() { return; }
 
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
     commands.spawn((
         NodeBundle {
             style: Style {

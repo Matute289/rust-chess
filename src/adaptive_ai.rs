@@ -254,7 +254,7 @@ fn save_profile_async(
 }
 
 fn spawn_learning_banner(commands: &mut Commands, asset_server: &AssetServer) {
-    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font = asset_server.load("fonts/DejaVuSans-Bold.ttf");
     commands.spawn((
         NodeBundle {
             style: Style {

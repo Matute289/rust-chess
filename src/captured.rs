@@ -199,7 +199,7 @@ pub fn show_promotion_overlay(
 
     let color = match promotion.color { Some(c) => c, None => return };
     let available = captured.available_for_promotion(color);
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     commands.spawn((
         NodeBundle {

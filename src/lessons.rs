@@ -145,7 +145,7 @@ fn build_lessons_root(
     progress:    &LoadedProgress,
     mode:        LessonMode,
 ) {
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     let mode_interactive_bg = if mode == LessonMode::Interactive {
         Color::rgba(0.20, 0.55, 0.20, 0.95)
@@ -488,7 +488,7 @@ fn setup_lesson_overlay(
 
     let lesson = &LESSONS[lesson_setup.lesson_idx];
     let ex     = &lesson.exercises[lesson_setup.exercise_idx];
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     let is_guided = lesson_setup.lesson_mode == LessonMode::Guided;
     let exercise_label = format!(
@@ -640,7 +640,7 @@ fn validate_lesson_move(
 }
 
 fn spawn_success_overlay(commands: &mut Commands, asset_server: &AssetServer, setup: &LessonSetup) {
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
     let is_last = setup.is_last_exercise();
 
     commands.spawn((

@@ -25,7 +25,7 @@ fn build_user_menu(
 ) {
     if !session.is_logged_in() { return; }
 
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
     let name = session.display_name.clone().unwrap_or_else(|| "Usuario".to_string());
     let chevron = if open { "icons/chevron-up.png" } else { "icons/chevron-down.png" };
 
@@ -306,7 +306,7 @@ fn build_home_root(
     screen: HomeScreen,
     timer_idx: usize,
 ) {
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     commands
         .spawn((

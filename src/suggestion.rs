@@ -98,7 +98,7 @@ fn sync_suggestion_panel(
     for e in &panel_q { commands.entity(e).despawn_recursive(); }
     let Some(ref text) = s.text else { return };
 
-    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     commands.spawn((
         NodeBundle {

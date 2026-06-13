@@ -35,7 +35,7 @@ fn spawn_hud(
     session:  Res<crate::auth::UserSession>,
     adaptive: Res<AdaptiveAiProfile>,
 ) {
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     let mode_label = match config.mode {
         GameMode::PvP    => "Modo: Jugador VS Jugador",
@@ -202,7 +202,7 @@ fn handle_status_events(
         match &ev.0 {
             GameStatus::Ok => {}
             GameStatus::Check => {
-                let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+                let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
                 commands.spawn((
                     NodeBundle {
                         style: Style {
@@ -252,7 +252,7 @@ fn spawn_game_over_overlay(
     narrative:    Option<&str>,
     game_mode:    GameMode,
 ) {
-    let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
     commands
         .spawn((
@@ -515,7 +515,7 @@ fn update_thinking_banner(
     let has_banner  = !banner_q.is_empty();
 
     if is_thinking && !has_banner {
-        let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
+        let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
         commands.spawn((
             NodeBundle {
                 style: Style {
@@ -596,7 +596,7 @@ fn update_timer_text(
 }
 
 fn spawn_board_labels(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+    let font = asset_server.load("fonts/DejaVuSans-Bold.ttf");
     let style = TextStyle {
         font,
         font_size: 12.0,
