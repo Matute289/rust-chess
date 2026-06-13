@@ -38,9 +38,10 @@ fn spawn_hud(
     let font: Handle<Font> = asset_server.load("fonts/FiraSans-Bold.ttf");
 
     let mode_label = match config.mode {
-        GameMode::PvP => "Modo: Jugador VS Jugador",
-        GameMode::PvC => "Modo: Jugador VS Computadora",
-        GameMode::PvL => "Modo: Jugador VS Learning",
+        GameMode::PvP    => "Modo: Jugador VS Jugador",
+        GameMode::PvC    => "Modo: Jugador VS Computadora",
+        GameMode::PvL    => "Modo: Jugador VS Learning",
+        GameMode::Lesson => "Modo: Lección",
     };
 
     commands

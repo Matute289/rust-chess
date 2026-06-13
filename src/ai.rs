@@ -158,7 +158,7 @@ fn ai_schedule_think(
     mut phase: ResMut<AiPhase>,
     game_config: Res<GameConfig>,
 ) {
-    if game_config.mode == GameMode::PvP { return; }
+    if matches!(game_config.mode, GameMode::PvP | GameMode::Lesson) { return; }
     if !matches!(*phase, AiPhase::Idle) { return; }
     if !turn.is_changed() { return; }
 

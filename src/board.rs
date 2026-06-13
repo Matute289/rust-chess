@@ -1,11 +1,21 @@
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
 use std::collections::HashMap;
 use crate::ai::{build_fen, build_fen_ep};
 use crate::captured::{CapturedPieces, PromotionPending};
 use crate::pieces::{Piece, PieceColor, PieceType};
-use crate::state::{AppState, GameConfig, GameMode, Suggestion};
+use crate::state::{AppState, GameConfig, GameMode, LessonSetup, Suggestion};
 use chess_engine::{Move as EngineMove, MoveFlag, Position, Square as EngineSquare};
+
+/// Bundled SystemParam for lesson-mode logic in `move_piece`.
+/// Groups 3 resources into 1 param to stay within Bevy's 16-param system limit.
+#[derive(SystemParam)]
+struct LessonParams<'w> {
+    game_config:  Res<'w, GameConfig>,
+    lesson_setup: Res<'w, LessonSetup>,
+    history:      ResMut<'w, GameHistory>,
+}
 
 #[derive(Resource, Default)]
 pub struct SelectedSquare {
@@ -294,7 +304,7 @@ fn select_piece(
                 // In PvC/PvL, only the human player's color can be selected
                 let human_can_select = match game_config.mode {
                     GameMode::PvP => true,
-                    GameMode::PvC | GameMode::PvL => piece.color == game_config.player_side,
+                    GameMode::PvC | GameMode::PvL | GameMode::Lesson => piece.color == game_config.player_side,
                 };
                 if !human_can_select { break; }
                 let pieces_vec: Vec<Piece> = pieces_query.iter().map(|(_, p)| *p).collect();
@@ -309,7 +319,7 @@ fn select_piece(
         if let Some(sel_ent) = selected_piece.entity {
             let human_can_castle = match game_config.mode {
                 GameMode::PvP => true,
-                GameMode::PvC | GameMode::PvL => turn.0 == game_config.player_side,
+                GameMode::PvC | GameMode::PvL | GameMode::Lesson => turn.0 == game_config.player_side,
             };
             if human_can_castle {
                 if let Some((_, sel_p)) = pieces_query.iter().find(|(e, _)| *e == sel_ent) {
@@ -355,7 +365,7 @@ fn select_piece(
             if piece.x == square.x && piece.y == square.y && piece.color == turn.0 {
                 let human_can_select = match game_config.mode {
                     GameMode::PvP => true,
-                    GameMode::PvC | GameMode::PvL => piece.color == game_config.player_side,
+                    GameMode::PvC | GameMode::PvL | GameMode::Lesson => piece.color == game_config.player_side,
                 };
                 if !human_can_select { break; }
                 if selected_piece.entity == Some(piece_entity) { break; } // same piece, no-op
@@ -377,14 +387,14 @@ fn move_piece(
     mut captured:       ResMut<CapturedPieces>,
     mut promotion:      ResMut<PromotionPending>,
     mut pending_castle: ResMut<CastlingPending>,
-    mut en_passant:        ResMut<EnPassantTarget>,
-    mut valid_moves:       ResMut<ValidMoveSquares>,
-    mut history:           ResMut<GameHistory>,
-    mut draw_state:        ResMut<DrawTracking>,
-    squares_query:         Query<(Entity, &Square)>,
-    mut pieces_query:      Query<(Entity, &mut Piece)>,
-    mut reset_event:       EventWriter<ResetSelectedEvent>,
-    mut status_event:      EventWriter<GameStatusEvent>,
+    mut en_passant:     ResMut<EnPassantTarget>,
+    mut valid_moves:    ResMut<ValidMoveSquares>,
+    mut draw_state:     ResMut<DrawTracking>,
+    mut lesson:         LessonParams,
+    squares_query:      Query<(Entity, &Square)>,
+    mut pieces_query:   Query<(Entity, &mut Piece)>,
+    mut reset_event:    EventWriter<ResetSelectedEvent>,
+    mut status_event:   EventWriter<GameStatusEvent>,
 ) {
     if !selected_square.is_changed() { return; }
     if promotion.is_pending() { return; }
@@ -412,6 +422,25 @@ fn move_piece(
         if engine_valid_squares(&piece, &pieces_vec, &castling_state, turn.0, en_passant.0)
             .contains(&(square_x, square_y))
         {
+            // In lesson mode, only the exact answer move is allowed.
+            if lesson.game_config.mode == GameMode::Lesson {
+                let b = lesson.lesson_setup.answer_uci.as_bytes();
+                let is_answer = b.len() >= 4
+                    && piece.x == b[1] - b'1'
+                    && piece.y == b[0] - b'a'
+                    && square_x == b[3] - b'1'
+                    && square_y == b[2] - b'a';
+                if !is_answer {
+                    if let Some((sq_e, _)) = squares_query.iter().find(|(_, s)| s.x == square_x && s.y == square_y) {
+                        commands.entity(sq_e).insert(BadMoveFlash(Timer::from_seconds(0.5, TimerMode::Once)));
+                    }
+                    if let Some((p_sq_e, _)) = squares_query.iter().find(|(_, s)| s.x == piece.x && s.y == piece.y) {
+                        selected_square.entity = Some(p_sq_e);
+                    }
+                    return;
+                }
+            }
+
             // Castling moves must go through the confirmation button — intercept here
             if piece.piece_type == PieceType::King {
                 let from_eng = EngineSquare(piece.x * 8 + piece.y);
@@ -453,7 +482,7 @@ fn move_piece(
                 if let Ok(pre_pos) = chess_engine::Position::from_fen(&pre_fen) {
                     if let Some(eng_mv) = find_engine_move(&pre_pos, from_eng, to_eng) {
                         eng_mv_flag = Some(eng_mv.flag());
-                        history.moves.push(eng_mv);
+                        lesson.history.moves.push(eng_mv);
                     }
                 }
             }
@@ -661,8 +690,15 @@ fn reset_board_state(
     draw_state.reset();
 }
 
-fn reset_game_history(mut history: ResMut<GameHistory>) {
+fn reset_game_history(
+    mut history:  ResMut<GameHistory>,
+    game_config:  Res<GameConfig>,
+    lesson_setup: Res<LessonSetup>,
+) {
     history.reset();
+    if game_config.mode == GameMode::Lesson && !lesson_setup.fen.is_empty() {
+        history.initial_fen = lesson_setup.fen.clone();
+    }
 }
 
 #[derive(Resource)]
