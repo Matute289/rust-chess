@@ -1,4 +1,6 @@
 use bevy::prelude::*;
+use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input::ButtonState;
 use std::sync::{Arc, Mutex};
 use crate::{
     auth::UserSession,
@@ -87,6 +89,12 @@ struct CachedProgress(Option<LoadedProgress>);
 #[derive(Resource, Default)]
 pub struct SelectedLessonMode(pub LessonMode);
 
+#[derive(Resource, Default)]
+pub struct SearchQuery(pub String);
+
+#[derive(Resource, Default, PartialEq, Clone, Copy)]
+pub enum LessonsTab { #[default] List, Table }
+
 // ─── Components (Lessons screen) ─────────────────────────────────────────────
 
 #[derive(Component)] struct LessonsRoot;
@@ -94,8 +102,8 @@ pub struct SelectedLessonMode(pub LessonMode);
 #[derive(Component)] struct BtnLessonsBack;
 #[derive(Component)] struct BtnModeInteractive;
 #[derive(Component)] struct BtnModeGuided;
-#[derive(Component)] struct ModeInteractiveMarker;
-#[derive(Component)] struct ModeGuidedMarker;
+#[derive(Component)] struct BtnTabList;
+#[derive(Component)] struct BtnTabTable;
 
 // ─── Components (Playing overlay) ────────────────────────────────────────────
 
@@ -109,64 +117,112 @@ pub struct SelectedLessonMode(pub LessonMode);
 
 // ─── UI Helpers ──────────────────────────────────────────────────────────────
 
-fn small_btn(parent: &mut ChildBuilder, font: Handle<Font>, text: &str, marker: impl Bundle, bg: Color) {
+fn star_string(stars: u8) -> &'static str {
+    match stars { 0 => "○○", 1 => "●○", _ => "●●" }
+}
+
+fn lesson_row_colors(stars: u8) -> (Color, Color, Color) {
+    match stars {
+        0 => (Color::rgba(0.10, 0.10, 0.22, 0.92), Color::rgba(0.35, 0.35, 0.60, 0.45), Color::rgb(0.82, 0.82, 0.95)),
+        1 => (Color::rgba(0.06, 0.20, 0.10, 0.92), Color::rgba(0.25, 0.58, 0.30, 0.60), Color::rgb(0.75, 0.95, 0.80)),
+        _ => (Color::rgba(0.08, 0.28, 0.12, 0.92), Color::rgba(0.28, 0.72, 0.34, 0.80), Color::rgb(0.82, 1.00, 0.86)),
+    }
+}
+
+fn icon_btn(
+    parent: &mut ChildBuilder,
+    font: Handle<Font>,
+    label: &str,
+    marker: impl Bundle,
+    bg: Color,
+    border: Color,
+) {
     parent.spawn((
         ButtonBundle {
             style: Style {
-                padding: UiRect { left: Val::Px(18.0), right: Val::Px(18.0), top: Val::Px(10.0), bottom: Val::Px(10.0) },
+                padding: UiRect { left: Val::Px(18.0), right: Val::Px(18.0), top: Val::Px(8.0), bottom: Val::Px(8.0) },
+                border: UiRect::all(Val::Px(2.0)),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
                 ..default()
             },
             background_color: BackgroundColor(bg),
-            border_color: BorderColor(Color::rgba(1., 1., 1., 0.15)),
+            border_color: BorderColor(border),
             ..default()
         },
         marker,
     ))
     .with_children(|p| {
-        p.spawn(TextBundle::from_section(text, TextStyle { font, font_size: 18.0, color: Color::rgb(0.92, 0.92, 0.92) }));
+        p.spawn(TextBundle::from_section(label, TextStyle { font, font_size: 18.0, color: Color::rgb(0.92, 0.92, 0.96) }));
     });
 }
 
-fn star_string(stars: u8) -> &'static str {
-    match stars {
-        0 => "☆☆",
-        1 => "★☆",
-        _ => "★★",
-    }
+fn spawn_table_row(parent: &mut ChildBuilder, font: &Handle<Font>, num: &str, title: &str, status: &str, header: bool) {
+    let bg = if header { Color::rgba(0.16, 0.16, 0.35, 0.95) } else { Color::rgba(0.08, 0.08, 0.20, 0.85) };
+    let font_size = if header { 16.0f32 } else { 15.0 };
+    let color = if header { Color::rgb(0.75, 0.75, 1.00) } else { Color::rgb(0.82, 0.82, 0.95) };
+    parent.spawn(NodeBundle {
+        style: Style {
+            width: Val::Px(580.0),
+            flex_direction: FlexDirection::Row,
+            padding: UiRect { left: Val::Px(10.0), right: Val::Px(10.0), top: Val::Px(6.0), bottom: Val::Px(6.0) },
+            border: UiRect::all(Val::Px(1.0)),
+            ..default()
+        },
+        background_color: BackgroundColor(bg),
+        border_color: BorderColor(Color::rgba(0.30, 0.30, 0.55, 0.35)),
+        ..default()
+    })
+    .with_children(|r| {
+        let ts = |s: &str| TextStyle { font: font.clone(), font_size, color };
+        r.spawn(NodeBundle { style: Style { width: Val::Px(36.0), ..default() }, ..default() })
+         .with_children(|p| { p.spawn(TextBundle::from_section(num, ts(num))); });
+        r.spawn(NodeBundle { style: Style { flex_grow: 1.0, ..default() }, ..default() })
+         .with_children(|p| { p.spawn(TextBundle::from_section(title, ts(title))); });
+        r.spawn(NodeBundle { style: Style { width: Val::Px(120.0), ..default() }, ..default() })
+         .with_children(|p| { p.spawn(TextBundle::from_section(status, ts(status))); });
+    });
 }
 
 // ─── Lessons Screen Builder ───────────────────────────────────────────────────
 
 fn build_lessons_root(
-    commands:    &mut Commands,
+    commands:     &mut Commands,
     asset_server: &AssetServer,
-    progress:    &LoadedProgress,
-    mode:        LessonMode,
+    progress:     &LoadedProgress,
+    mode:         LessonMode,
+    search:       &str,
+    tab:          LessonsTab,
 ) {
     let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
 
-    let mode_interactive_bg = if mode == LessonMode::Interactive {
-        Color::rgba(0.20, 0.55, 0.20, 0.95)
-    } else {
-        Color::rgba(0.10, 0.20, 0.10, 0.80)
-    };
-    let mode_guided_bg = if mode == LessonMode::Guided {
-        Color::rgba(0.20, 0.35, 0.65, 0.95)
-    } else {
-        Color::rgba(0.08, 0.12, 0.28, 0.80)
-    };
+    // Stats
+    let completed   = progress.stars.iter().filter(|&&s| s > 0).count();
+    let double_star = progress.stars.iter().filter(|&&s| s >= 2).count();
+    let single_star = progress.stars.iter().filter(|&&s| s == 1).count();
+    let total = LESSONS.len();
+
+    // Search filter
+    let sq = search.to_lowercase();
+    let filtered: Vec<(usize, &LessonData)> = LESSONS.iter().enumerate()
+        .filter(|(_, l)| sq.is_empty() || l.title.to_lowercase().contains(&sq) || l.description.to_lowercase().contains(&sq))
+        .collect();
+
+    // Button color helpers
+    let mode_i_bg = if mode == LessonMode::Interactive { Color::rgba(0.18, 0.50, 0.18, 0.95) } else { Color::rgba(0.08, 0.18, 0.08, 0.80) };
+    let mode_g_bg = if mode == LessonMode::Guided      { Color::rgba(0.18, 0.32, 0.60, 0.95) } else { Color::rgba(0.06, 0.10, 0.24, 0.80) };
+    let tab_l_bg  = if tab == LessonsTab::List  { Color::rgba(0.22, 0.22, 0.50, 0.92) } else { Color::rgba(0.10, 0.10, 0.26, 0.80) };
+    let tab_t_bg  = if tab == LessonsTab::Table { Color::rgba(0.22, 0.22, 0.50, 0.92) } else { Color::rgba(0.10, 0.10, 0.26, 0.80) };
 
     commands.spawn((
         NodeBundle {
             style: Style {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
+                width:          Val::Percent(100.0),
+                height:         Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                row_gap: Val::Px(12.0),
+                align_items:    AlignItems::Center,
+                padding:        UiRect { top: Val::Px(20.0), bottom: Val::Px(12.0), ..default() },
+                row_gap:        Val::Px(8.0),
                 ..default()
             },
             background_color: BackgroundColor(Color::rgba(0.04, 0.04, 0.10, 0.97)),
@@ -176,108 +232,159 @@ fn build_lessons_root(
         LessonsRoot,
     ))
     .with_children(|root| {
+        // ── Title ──
         root.spawn(TextBundle::from_section(
             "CURRÍCULO DE LECCIONES",
-            TextStyle { font: font.clone(), font_size: 44.0, color: Color::rgb(0.95, 0.92, 0.80) },
-        ));
-        root.spawn(TextBundle::from_section(
-            "TÁCTICA",
-            TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.65, 0.65, 0.80) },
+            TextStyle { font: font.clone(), font_size: 38.0, color: Color::rgb(0.95, 0.92, 0.80) },
         ));
 
-        // Mode toggle row
+        // ── Stats bar ──
+        root.spawn(TextBundle::from_section(
+            format!("Completadas: {}/{} · ●● {} · ●○ {}", completed, total, double_star, single_star),
+            TextStyle { font: font.clone(), font_size: 16.0, color: Color::rgb(0.55, 0.82, 0.60) },
+        ));
+
+        // ── Controls row: mode toggle + tab toggle ──
         root.spawn(NodeBundle {
-            style: Style { flex_direction: FlexDirection::Row, column_gap: Val::Px(12.0), margin: UiRect { top: Val::Px(4.0), bottom: Val::Px(8.0), ..default() }, ..default() },
+            style: Style {
+                flex_direction: FlexDirection::Row,
+                column_gap:     Val::Px(18.0),
+                align_items:    AlignItems::Center,
+                ..default()
+            },
             ..default()
         })
         .with_children(|row| {
-            row.spawn((
-                ButtonBundle {
-                    style: Style {
-                        padding: UiRect { left: Val::Px(24.0), right: Val::Px(24.0), top: Val::Px(10.0), bottom: Val::Px(10.0) },
-                        border: UiRect::all(Val::Px(2.0)),
-                        ..default()
-                    },
-                    background_color: BackgroundColor(mode_interactive_bg),
-                    border_color: BorderColor(Color::rgba(0.30, 0.70, 0.30, 0.60)),
-                    ..default()
-                },
-                BtnModeInteractive,
-            ))
-            .with_children(|p| {
-                p.spawn(TextBundle::from_section(
-                    "◉ Interactivo",
-                    TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(0.90, 0.95, 0.90) },
-                ));
+            // Mode group
+            row.spawn(NodeBundle {
+                style: Style { flex_direction: FlexDirection::Row, column_gap: Val::Px(6.0), ..default() },
+                ..default()
+            })
+            .with_children(|g| {
+                icon_btn(g, font.clone(), "◉ Interactivo", BtnModeInteractive,
+                    mode_i_bg, Color::rgba(0.28, 0.68, 0.28, 0.65));
+                icon_btn(g, font.clone(), "◎ Guiado", BtnModeGuided,
+                    mode_g_bg, Color::rgba(0.28, 0.48, 0.88, 0.65));
             });
 
-            row.spawn((
-                ButtonBundle {
-                    style: Style {
-                        padding: UiRect { left: Val::Px(24.0), right: Val::Px(24.0), top: Val::Px(10.0), bottom: Val::Px(10.0) },
-                        border: UiRect::all(Val::Px(2.0)),
-                        ..default()
-                    },
-                    background_color: BackgroundColor(mode_guided_bg),
-                    border_color: BorderColor(Color::rgba(0.30, 0.50, 0.90, 0.60)),
-                    ..default()
-                },
-                BtnModeGuided,
-            ))
-            .with_children(|p| {
-                p.spawn(TextBundle::from_section(
-                    "◎ Guiado",
-                    TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(0.85, 0.88, 0.98) },
-                ));
+            // Tab group
+            row.spawn(NodeBundle {
+                style: Style { flex_direction: FlexDirection::Row, column_gap: Val::Px(6.0), ..default() },
+                ..default()
+            })
+            .with_children(|g| {
+                icon_btn(g, font.clone(), "≡ Lista",  BtnTabList,  tab_l_bg, Color::rgba(0.45, 0.45, 0.75, 0.55));
+                icon_btn(g, font.clone(), "⊞ Tabla", BtnTabTable, tab_t_bg, Color::rgba(0.45, 0.45, 0.75, 0.55));
             });
         });
 
-        // Lesson list
-        for (idx, lesson) in LESSONS.iter().enumerate() {
-            let stars = progress.stars.get(idx).copied().unwrap_or(0);
-            root.spawn((
-                ButtonBundle {
-                    style: Style {
-                        width: Val::Px(520.0),
-                        flex_direction: FlexDirection::Row,
-                        justify_content: JustifyContent::SpaceBetween,
-                        align_items: AlignItems::Center,
-                        padding: UiRect { left: Val::Px(24.0), right: Val::Px(20.0), top: Val::Px(14.0), bottom: Val::Px(14.0) },
-                        border: UiRect::all(Val::Px(1.0)),
-                        ..default()
-                    },
-                    background_color: BackgroundColor(Color::rgba(0.10, 0.10, 0.22, 0.92)),
-                    border_color: BorderColor(Color::rgba(0.40, 0.40, 0.65, 0.45)),
-                    ..default()
-                },
-                BtnLessonStart(idx),
-            ))
-            .with_children(|row| {
-                row.spawn(TextBundle::from_section(
-                    format!("{}. {}", idx + 1, lesson.title),
-                    TextStyle { font: font.clone(), font_size: 22.0, color: Color::rgb(0.88, 0.88, 0.95) },
-                ));
-                row.spawn(TextBundle::from_section(
-                    star_string(stars),
-                    TextStyle { font: font.clone(), font_size: 24.0, color: Color::rgb(1.0, 0.85, 0.20) },
-                ));
-            });
-        }
+        // ── Search box ──
+        root.spawn(NodeBundle {
+            style: Style {
+                width:   Val::Px(580.0),
+                padding: UiRect { left: Val::Px(14.0), right: Val::Px(14.0), top: Val::Px(8.0), bottom: Val::Px(8.0) },
+                border:  UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::rgba(0.07, 0.07, 0.18, 0.92)),
+            border_color:     BorderColor(Color::rgba(0.45, 0.45, 0.72, 0.65)),
+            ..default()
+        })
+        .with_children(|p| {
+            let (text, color) = if search.is_empty() {
+                ("▸ Buscar lección...".to_string(), Color::rgba(0.50, 0.50, 0.68, 1.0))
+            } else {
+                (format!("▸ {}_", search), Color::rgb(0.92, 0.92, 1.00))
+            };
+            p.spawn(TextBundle::from_section(
+                text,
+                TextStyle { font: font.clone(), font_size: 17.0, color },
+            ));
+        });
 
-        // Back button
-        root.spawn(NodeBundle { style: Style { height: Val::Px(12.0), ..default() }, ..default() });
+        // ── Content area ──
+        root.spawn(NodeBundle {
+            style: Style {
+                width:           Val::Px(600.0),
+                flex_direction:  FlexDirection::Column,
+                row_gap:         Val::Px(5.0),
+                flex_grow:       1.0,
+                overflow:        Overflow::clip_y(),
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|content| {
+            if tab == LessonsTab::List {
+                for (idx, lesson) in &filtered {
+                    let stars = progress.stars.get(*idx).copied().unwrap_or(0);
+                    let (bg, border, text_color) = lesson_row_colors(stars);
+                    content.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                width:            Val::Px(580.0),
+                                flex_direction:   FlexDirection::Row,
+                                justify_content:  JustifyContent::SpaceBetween,
+                                align_items:      AlignItems::Center,
+                                padding:          UiRect { left: Val::Px(18.0), right: Val::Px(14.0), top: Val::Px(11.0), bottom: Val::Px(11.0) },
+                                border:           UiRect::all(Val::Px(1.0)),
+                                ..default()
+                            },
+                            background_color: BackgroundColor(bg),
+                            border_color:     BorderColor(border),
+                            ..default()
+                        },
+                        BtnLessonStart(*idx),
+                    ))
+                    .with_children(|row| {
+                        row.spawn(TextBundle::from_section(
+                            format!("{}. {}", idx + 1, lesson.title),
+                            TextStyle { font: font.clone(), font_size: 19.0, color: text_color },
+                        ));
+                        row.spawn(TextBundle::from_section(
+                            star_string(stars),
+                            TextStyle { font: font.clone(), font_size: 20.0,
+                                color: if stars > 0 { Color::rgb(0.38, 0.95, 0.48) } else { Color::rgba(0.45, 0.45, 0.62, 0.80) }
+                            },
+                        ));
+                    });
+                }
+                if filtered.is_empty() {
+                    content.spawn(TextBundle::from_section(
+                        "No se encontraron lecciones.",
+                        TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgba(0.55, 0.55, 0.70, 1.0) },
+                    ));
+                }
+            } else {
+                // Table view
+                spawn_table_row(content, &font, "#", "Lección", "Estado", true);
+                for (idx, lesson) in &filtered {
+                    let stars = progress.stars.get(*idx).copied().unwrap_or(0);
+                    let status = match stars { 0 => "Pendiente", 1 => "●○  Guiado", _ => "●●  Completada" };
+                    spawn_table_row(content, &font, &format!("{}", idx + 1), lesson.title, status, false);
+                }
+                if filtered.is_empty() {
+                    content.spawn(TextBundle::from_section(
+                        "No se encontraron lecciones.",
+                        TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgba(0.55, 0.55, 0.70, 1.0) },
+                    ));
+                }
+            }
+        });
+
+        // ── Back button ──
         root.spawn((
             ButtonBundle {
                 style: Style {
-                    width: Val::Px(520.0),
-                    height: Val::Px(52.0),
+                    width:           Val::Px(580.0),
+                    height:          Val::Px(46.0),
                     justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    border: UiRect::all(Val::Px(1.0)),
+                    align_items:     AlignItems::Center,
+                    border:          UiRect::all(Val::Px(1.0)),
                     ..default()
                 },
-                background_color: BackgroundColor(Color::rgba(0.12, 0.12, 0.22, 0.85)),
-                border_color: BorderColor(Color::rgba(0.35, 0.35, 0.55, 0.40)),
+                background_color: BackgroundColor(Color::rgba(0.10, 0.10, 0.22, 0.85)),
+                border_color:     BorderColor(Color::rgba(0.32, 0.32, 0.52, 0.40)),
                 ..default()
             },
             BtnLessonsBack,
@@ -285,7 +392,7 @@ fn build_lessons_root(
         .with_children(|p| {
             p.spawn(TextBundle::from_section(
                 "← Menú Learning",
-                TextStyle { font, font_size: 20.0, color: Color::rgb(0.75, 0.75, 0.88) },
+                TextStyle { font, font_size: 18.0, color: Color::rgb(0.72, 0.72, 0.88) },
             ));
         });
     });
@@ -300,7 +407,10 @@ fn setup_lessons(
     mode:            Res<SelectedLessonMode>,
     fetch_state:     Res<ProgressFetchState>,
     session:         Res<UserSession>,
+    mut sq:          ResMut<SearchQuery>,
+    tab:             Res<LessonsTab>,
 ) {
+    sq.0.clear();
     // Kick off backend fetch
     if let Ok(mut g) = fetch_state.0.try_lock() { *g = None; }
     #[cfg(target_arch = "wasm32")]
@@ -314,7 +424,7 @@ fn setup_lessons(
     }
 
     let progress = cached.0.clone().unwrap_or_default();
-    build_lessons_root(&mut commands, &asset_server, &progress, mode.0);
+    build_lessons_root(&mut commands, &asset_server, &progress, mode.0, &sq.0, *tab);
 }
 
 fn despawn_lessons(
@@ -328,6 +438,8 @@ fn poll_progress_result(
     fetch_state:  Res<ProgressFetchState>,
     mut cached:   ResMut<CachedProgress>,
     mode:         Res<SelectedLessonMode>,
+    sq:           Res<SearchQuery>,
+    tab:          Res<LessonsTab>,
     root_q:       Query<Entity, With<LessonsRoot>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -336,7 +448,7 @@ fn poll_progress_result(
         if let Some(p) = guard.take() {
             cached.0 = Some(p.clone());
             for e in &root_q { commands.entity(e).despawn_recursive(); }
-            build_lessons_root(&mut commands, &asset_server, &p, mode.0);
+            build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab);
         }
     }
 }
@@ -381,6 +493,8 @@ fn handle_lessons_back(
 fn handle_mode_interactive(
     q:        Query<&Interaction, (Changed<Interaction>, With<BtnModeInteractive>)>,
     mut mode: ResMut<SelectedLessonMode>,
+    sq:       Res<SearchQuery>,
+    tab:      Res<LessonsTab>,
     root_q:   Query<Entity, With<LessonsRoot>>,
     cached:   Res<CachedProgress>,
     mut commands: Commands,
@@ -391,13 +505,15 @@ fn handle_mode_interactive(
         mode.0 = LessonMode::Interactive;
         let p = cached.0.clone().unwrap_or_default();
         for e in &root_q { commands.entity(e).despawn_recursive(); }
-        build_lessons_root(&mut commands, &asset_server, &p, mode.0);
+        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab);
     }
 }
 
 fn handle_mode_guided(
     q:        Query<&Interaction, (Changed<Interaction>, With<BtnModeGuided>)>,
     mut mode: ResMut<SelectedLessonMode>,
+    sq:       Res<SearchQuery>,
+    tab:      Res<LessonsTab>,
     root_q:   Query<Entity, With<LessonsRoot>>,
     cached:   Res<CachedProgress>,
     mut commands: Commands,
@@ -408,7 +524,76 @@ fn handle_mode_guided(
         mode.0 = LessonMode::Guided;
         let p = cached.0.clone().unwrap_or_default();
         for e in &root_q { commands.entity(e).despawn_recursive(); }
-        build_lessons_root(&mut commands, &asset_server, &p, mode.0);
+        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab);
+    }
+}
+
+fn handle_tab_list(
+    q:        Query<&Interaction, (Changed<Interaction>, With<BtnTabList>)>,
+    mut tab:  ResMut<LessonsTab>,
+    sq:       Res<SearchQuery>,
+    mode:     Res<SelectedLessonMode>,
+    root_q:   Query<Entity, With<LessonsRoot>>,
+    cached:   Res<CachedProgress>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    for i in &q {
+        if *i != Interaction::Pressed { continue; }
+        *tab = LessonsTab::List;
+        let p = cached.0.clone().unwrap_or_default();
+        for e in &root_q { commands.entity(e).despawn_recursive(); }
+        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab);
+    }
+}
+
+fn handle_tab_table(
+    q:        Query<&Interaction, (Changed<Interaction>, With<BtnTabTable>)>,
+    mut tab:  ResMut<LessonsTab>,
+    sq:       Res<SearchQuery>,
+    mode:     Res<SelectedLessonMode>,
+    root_q:   Query<Entity, With<LessonsRoot>>,
+    cached:   Res<CachedProgress>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    for i in &q {
+        if *i != Interaction::Pressed { continue; }
+        *tab = LessonsTab::Table;
+        let p = cached.0.clone().unwrap_or_default();
+        for e in &root_q { commands.entity(e).despawn_recursive(); }
+        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab);
+    }
+}
+
+fn handle_search_input(
+    mut key_ev:   EventReader<KeyboardInput>,
+    mut sq:       ResMut<SearchQuery>,
+    tab:          Res<LessonsTab>,
+    mode:         Res<SelectedLessonMode>,
+    root_q:       Query<Entity, With<LessonsRoot>>,
+    cached:       Res<CachedProgress>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let mut changed = false;
+    for ev in key_ev.read() {
+        if ev.state != ButtonState::Pressed { continue; }
+        match &ev.logical_key {
+            Key::Character(s) => {
+                for ch in s.chars() {
+                    if !ch.is_control() { sq.0.push(ch); changed = true; }
+                }
+            }
+            Key::Backspace => { sq.0.pop(); changed = true; }
+            Key::Space     => { sq.0.push(' '); changed = true; }
+            _ => {}
+        }
+    }
+    if changed {
+        let p = cached.0.clone().unwrap_or_default();
+        for e in &root_q { commands.entity(e).despawn_recursive(); }
+        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab);
     }
 }
 
@@ -792,6 +977,8 @@ impl Plugin for LessonsPlugin {
             .init_resource::<ProgressFetchState>()
             .init_resource::<CachedProgress>()
             .init_resource::<SelectedLessonMode>()
+            .init_resource::<SearchQuery>()
+            .init_resource::<LessonsTab>()
             // Lessons screen
             .add_systems(OnEnter(AppState::Lessons),  setup_lessons)
             .add_systems(OnExit(AppState::Lessons),   despawn_lessons)
@@ -800,6 +987,9 @@ impl Plugin for LessonsPlugin {
                 handle_lessons_back,
                 handle_mode_interactive,
                 handle_mode_guided,
+                handle_tab_list,
+                handle_tab_table,
+                handle_search_input,
                 highlight_lesson_btns,
                 highlight_nav_btns,
                 poll_progress_result,
