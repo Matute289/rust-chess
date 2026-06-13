@@ -423,10 +423,11 @@ fn move_piece(
             .contains(&(square_x, square_y))
         {
             // In lesson mode, only the exact answer move is allowed.
-            if lesson.game_config.mode == GameMode::Lesson {
+            if lesson.game_config.mode == GameMode::Lesson
+                && lesson.lesson_setup.answer_uci.len() >= 4
+            {
                 let b = lesson.lesson_setup.answer_uci.as_bytes();
-                let is_answer = b.len() >= 4
-                    && piece.x == b[1] - b'1'
+                let is_answer = piece.x == b[1] - b'1'
                     && piece.y == b[0] - b'a'
                     && square_x == b[3] - b'1'
                     && square_y == b[2] - b'a';
