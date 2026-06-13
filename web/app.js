@@ -1,4 +1,4 @@
-import init from './pkg/bevy_chess.js';
+import init, { go_to_pvl_hub, go_to_home } from './pkg/bevy_chess.js';
 
 const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 let isPaused = false;
@@ -13,6 +13,17 @@ window.show_game_controls = () => {
 window.hide_game_controls = () => {
   document.getElementById('esc-hint').style.display = 'none';
   document.getElementById('menu-btn').style.display = 'none';
+  // Close pause overlay if open (state transition happened — game is over or exited)
+  if (isPaused) {
+    isPaused = false;
+    document.getElementById('pause-overlay').style.display = 'none';
+    document.getElementById('canvas').style.pointerEvents = 'auto';
+  }
+};
+
+window.set_pvl_mode = function(isPvL) {
+  const hubBtn = document.getElementById('pause-hub-btn');
+  if (hubBtn) hubBtn.style.display = isPvL ? 'block' : 'none';
 };
 
 function fitCanvas() {
@@ -23,6 +34,12 @@ function fitCanvas() {
   let factor = Math.min(scaleX, scaleY);
   if (!isTouchDevice) factor = Math.min(factor, 1.0); // desktop: don't upscale
   canvas.style.transform = `translate(-50%, -50%) scale(${factor})`;
+}
+
+function closePause() {
+  isPaused = false;
+  document.getElementById('pause-overlay').style.display = 'none';
+  document.getElementById('canvas').style.pointerEvents = 'auto';
 }
 
 window.togglePause = function () {
@@ -39,10 +56,14 @@ window.togglePause = function () {
   }
 };
 
-window.exitGame = function () {
-  if (confirm('¿Empezar una nueva partida?')) {
-    window.location.reload();
-  }
+window.pauseGoToHub = function() {
+  closePause();
+  go_to_pvl_hub();
+};
+
+window.pauseGoToHome = function() {
+  closePause();
+  go_to_home();
 };
 
 // Intercept Escape before Bevy's canvas handler can swallow it

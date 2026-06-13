@@ -24,7 +24,8 @@
     <div class="pause-box">
       <div class="pause-title">⏸ PAUSA</div>
       <button class="pause-resume-btn" onclick="togglePause()">▶ Reanudar</button>
-      <button class="pause-new-game-btn" onclick="exitGame()">✕ Nueva partida</button>
+      <button id="pause-hub-btn" class="pause-nav-btn pause-hub" onclick="pauseGoToHub()" style="display:none">🎓 Menú Learning</button>
+      <button class="pause-nav-btn pause-home" onclick="pauseGoToHome()">🏠 Menú Principal</button>
     </div>
   </div>
 

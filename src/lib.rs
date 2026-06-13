@@ -15,6 +15,7 @@ mod ui;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 use adaptive_ai::AdaptiveAiPlugin;
 use ai::AIPlugin;
 use analysis::AnalysisPlugin;
@@ -25,7 +26,7 @@ use home::HomePlugin;
 use persistence::PersistencePlugin;
 use pieces::PiecesPlugin;
 use pvl_hub::PvLHubPlugin;
-use state::{AppState, GameConfig};
+use state::{AppState, GameConfig, GameMode};
 use suggestion::SuggestionPlugin;
 use ui::UIPlugin;
 
@@ -45,11 +46,34 @@ extern "C" {
     fn show_game_controls();
     #[wasm_bindgen(js_namespace = window)]
     fn hide_game_controls();
+    #[wasm_bindgen(js_namespace = window)]
+    fn set_pvl_mode(is_pvl: bool);
 }
 
-fn on_enter_playing() {
+// JS can set these to request a state transition on the next Bevy frame
+static NAV_TO_HUB:  AtomicBool = AtomicBool::new(false);
+static NAV_TO_HOME: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn go_to_pvl_hub() {
+    NAV_TO_HUB.store(true, Ordering::SeqCst);
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn go_to_home() {
+    NAV_TO_HOME.store(true, Ordering::SeqCst);
+}
+
+fn on_enter_playing(config: Res<GameConfig>) {
     #[cfg(target_arch = "wasm32")]
-    show_game_controls();
+    {
+        show_game_controls();
+        set_pvl_mode(config.mode == GameMode::PvL);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = config;
 }
 
 fn on_enter_home() {
@@ -60,6 +84,14 @@ fn on_enter_home() {
 fn on_enter_pvl_hub() {
     #[cfg(target_arch = "wasm32")]
     hide_game_controls();
+}
+
+fn poll_nav_requests(mut next_state: ResMut<NextState<AppState>>) {
+    if NAV_TO_HUB.swap(false, Ordering::SeqCst) {
+        next_state.set(AppState::PvLHub);
+    } else if NAV_TO_HOME.swap(false, Ordering::SeqCst) {
+        next_state.set(AppState::Home);
+    }
 }
 
 pub fn run_app() {
@@ -88,6 +120,7 @@ pub fn run_app() {
         .add_systems(OnEnter(AppState::Playing), on_enter_playing)
         .add_systems(OnEnter(AppState::Home),    on_enter_home)
         .add_systems(OnEnter(AppState::PvLHub),  on_enter_pvl_hub)
+        .add_systems(Update, poll_nav_requests)
         .add_systems(Startup, setup)
         .run();
 }

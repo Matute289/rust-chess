@@ -143,8 +143,7 @@ body {
   background: #ffe84d;
 }
 
-.pause-new-game-btn {
-  background: rgba(120, 30, 30, 0.9);
+.pause-nav-btn {
   color: #eee;
   border: none;
   border-radius: 8px;
@@ -156,7 +155,16 @@ body {
   letter-spacing: 2px;
   transition: background 0.15s;
 }
-.pause-new-game-btn:hover {
+.pause-nav-btn.pause-hub {
+  background: rgba(20, 50, 110, 0.9);
+}
+.pause-nav-btn.pause-hub:hover {
+  background: rgba(30, 70, 150, 0.95);
+}
+.pause-nav-btn.pause-home {
+  background: rgba(120, 30, 30, 0.9);
+}
+.pause-nav-btn.pause-home:hover {
   background: rgba(160, 40, 40, 0.95);
 }
 
