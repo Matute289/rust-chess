@@ -8,6 +8,7 @@ mod persistence;
 mod pieces;
 mod pvl_hub;
 mod state;
+mod suggestion;
 mod ui;
 
 use bevy::asset::AssetMetaCheck;
@@ -23,6 +24,7 @@ use persistence::PersistencePlugin;
 use pieces::PiecesPlugin;
 use pvl_hub::PvLHubPlugin;
 use state::{AppState, GameConfig};
+use suggestion::SuggestionPlugin;
 use ui::UIPlugin;
 
 #[cfg(target_arch = "wasm32")]
@@ -80,7 +82,7 @@ pub fn run_app() {
         .init_state::<AppState>()
         .init_resource::<GameConfig>()
         .add_plugins(AuthPlugin)
-        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin))
+        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin, SuggestionPlugin))
         .add_systems(OnEnter(AppState::Playing), on_enter_playing)
         .add_systems(OnEnter(AppState::Home),    on_enter_home)
         .add_systems(OnEnter(AppState::PvLHub),  on_enter_pvl_hub)

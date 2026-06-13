@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::ai::{build_fen, build_fen_ep};
 use crate::captured::{CapturedPieces, PromotionPending};
 use crate::pieces::{Piece, PieceColor, PieceType};
-use crate::state::{AppState, GameConfig, GameMode};
+use crate::state::{AppState, GameConfig, GameMode, Suggestion};
 use chess_engine::{Move as EngineMove, MoveFlag, Position, Square as EngineSquare};
 
 #[derive(Resource, Default)]
@@ -108,34 +108,44 @@ impl GameHistory {
 
 #[derive(Resource)]
 struct SquareMaterials {
-    highlight_white: Handle<StandardMaterial>,
-    highlight_black: Handle<StandardMaterial>,
-    selected_white:  Handle<StandardMaterial>,
-    selected_black:  Handle<StandardMaterial>,
-    valid_white:     Handle<StandardMaterial>,
-    valid_black:     Handle<StandardMaterial>,
-    bad_white:       Handle<StandardMaterial>,
-    bad_black:       Handle<StandardMaterial>,
-    white_color:     Handle<StandardMaterial>,
-    black_color:     Handle<StandardMaterial>,
+    highlight_white:   Handle<StandardMaterial>,
+    highlight_black:   Handle<StandardMaterial>,
+    selected_white:    Handle<StandardMaterial>,
+    selected_black:    Handle<StandardMaterial>,
+    valid_white:       Handle<StandardMaterial>,
+    valid_black:       Handle<StandardMaterial>,
+    bad_white:         Handle<StandardMaterial>,
+    bad_black:         Handle<StandardMaterial>,
+    suggest_from_white: Handle<StandardMaterial>,
+    suggest_from_black: Handle<StandardMaterial>,
+    suggest_to_white:   Handle<StandardMaterial>,
+    suggest_to_black:   Handle<StandardMaterial>,
+    white_color:       Handle<StandardMaterial>,
+    black_color:       Handle<StandardMaterial>,
 }
 
 impl FromWorld for SquareMaterials {
     fn from_world(world: &mut World) -> Self {
         let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
         SquareMaterials {
-            // Hover (blue tint): white/black base with subtle blue wash
+            // Hover (blue tint)
             highlight_white: materials.add(Color::rgb(0.75, 0.82, 1.00)),
             highlight_black: materials.add(Color::rgb(0.10, 0.18, 0.45)),
             // Selected (green tint)
             selected_white:  materials.add(Color::rgb(0.72, 1.00, 0.78)),
             selected_black:  materials.add(Color::rgb(0.06, 0.42, 0.16)),
-            // Valid move destination (lighter green tint)
+            // Valid move destination
             valid_white:     materials.add(Color::rgb(0.78, 1.00, 0.78)),
             valid_black:     materials.add(Color::rgb(0.10, 0.38, 0.12)),
-            // Bad move flash (red tint)
+            // Bad move flash (red)
             bad_white:       materials.add(Color::rgb(1.00, 0.72, 0.72)),
             bad_black:       materials.add(Color::rgb(0.42, 0.06, 0.06)),
+            // Suggestion: from-square (bright blue-purple)
+            suggest_from_white: materials.add(Color::rgb(0.45, 0.55, 1.00)),
+            suggest_from_black: materials.add(Color::rgb(0.18, 0.28, 0.80)),
+            // Suggestion: to-square (light cyan)
+            suggest_to_white:   materials.add(Color::rgb(0.60, 0.88, 1.00)),
+            suggest_to_black:   materials.add(Color::rgb(0.05, 0.38, 0.58)),
             // Original colors
             white_color:     materials.add(Color::rgb(1.00, 0.90, 0.90)),
             black_color:     materials.add(Color::rgb(0.00, 0.10, 0.10)),
@@ -173,6 +183,7 @@ fn create_board(
 fn color_squares(
     selected_square: Res<SelectedSquare>,
     valid_moves:     Res<ValidMoveSquares>,
+    suggestion:      Res<Suggestion>,
     materials:       Res<SquareMaterials>,
     time:            Res<Time>,
     mut query: Query<(Entity, &Square, &mut Handle<StandardMaterial>, Option<&PickingInteraction>, Option<&mut BadMoveFlash>)>,
@@ -188,8 +199,10 @@ fn color_squares(
             commands.entity(entity).remove::<BadMoveFlash>();
         }
 
-        let is_valid = valid_moves.0.contains(&(square.x, square.y));
-        let is_white = square.is_white();
+        let is_valid        = valid_moves.0.contains(&(square.x, square.y));
+        let is_white        = square.is_white();
+        let is_suggest_from = suggestion.from_sq.map_or(false, |(f, r)| f == square.x && r == square.y);
+        let is_suggest_to   = suggestion.to_sq.map_or(false,   |(f, r)| f == square.x && r == square.y);
 
         *material = match interaction {
             Some(PickingInteraction::Hovered | PickingInteraction::Pressed) => {
@@ -197,6 +210,12 @@ fn color_squares(
             }
             _ if Some(entity) == selected_square.entity => {
                 if is_white { materials.selected_white.clone() } else { materials.selected_black.clone() }
+            }
+            _ if is_suggest_from => {
+                if is_white { materials.suggest_from_white.clone() } else { materials.suggest_from_black.clone() }
+            }
+            _ if is_suggest_to => {
+                if is_white { materials.suggest_to_white.clone() } else { materials.suggest_to_black.clone() }
             }
             _ if is_valid => {
                 if is_white { materials.valid_white.clone() } else { materials.valid_black.clone() }

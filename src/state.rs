@@ -1,6 +1,18 @@
 use bevy::prelude::*;
 use crate::pieces::PieceColor;
 
+#[derive(Resource, Default, Clone)]
+pub struct Suggestion {
+    pub from_sq: Option<(u8, u8)>,
+    pub to_sq:   Option<(u8, u8)>,
+    pub text:    Option<String>,
+}
+
+impl Suggestion {
+    pub fn is_active(&self) -> bool { self.from_sq.is_some() }
+    pub fn clear(&mut self) { *self = Self::default(); }
+}
+
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum AppState {
     #[default]

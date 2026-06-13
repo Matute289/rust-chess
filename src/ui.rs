@@ -3,6 +3,7 @@ use crate::analysis::{AnalysisReport, GameNarrative};
 use crate::board::{GameStatus, GameStatusEvent, PlayerTurn};
 use crate::pieces::PieceColor;
 use crate::state::{AppState, GameConfig, GameMode};
+use crate::suggestion::BtnSuggest;
 
 // ─── Components ──────────────────────────────────────────────────────────────
 
@@ -83,6 +84,46 @@ fn spawn_hud(
                 ));
             }
         });
+
+    if config.mode == GameMode::PvL {
+        commands.spawn((
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(14.0),
+                    top: Val::Px(14.0),
+                    ..default()
+                },
+                z_index: ZIndex::Global(15),
+                ..default()
+            },
+            StatusBar,
+        ))
+        .with_children(|p| {
+            p.spawn((
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Px(120.0),
+                        height: Val::Px(44.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        border: UiRect::all(Val::Px(1.0)),
+                        ..default()
+                    },
+                    background_color: BackgroundColor(Color::rgba(0.10, 0.20, 0.55, 0.90)),
+                    border_color: BorderColor(Color::rgba(0.35, 0.55, 1.00, 0.60)),
+                    ..default()
+                },
+                BtnSuggest,
+            ))
+            .with_children(|btn| {
+                btn.spawn(TextBundle::from_section(
+                    "Sugerir",
+                    TextStyle { font, font_size: 22.0, color: Color::rgb(0.85, 0.92, 1.00) },
+                ));
+            });
+        });
+    }
 
 }
 
