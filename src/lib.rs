@@ -17,7 +17,7 @@ mod ui;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use adaptive_ai::AdaptiveAiPlugin;
 use ai::AIPlugin;
 use analysis::AnalysisPlugin;
@@ -58,6 +58,9 @@ extern "C" {
 static NAV_TO_HUB:  AtomicBool = AtomicBool::new(false);
 static NAV_TO_HOME: AtomicBool = AtomicBool::new(false);
 
+// Touch scroll delta for the lesson list (screen-to-canvas-space px, set by JS)
+pub(crate) static LESSON_SCROLL_DELTA: AtomicI32 = AtomicI32::new(0);
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn go_to_pvl_hub() {
@@ -68,6 +71,12 @@ pub fn go_to_pvl_hub() {
 #[wasm_bindgen]
 pub fn go_to_home() {
     NAV_TO_HOME.store(true, Ordering::SeqCst);
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn bevy_lesson_scroll(delta: f32) {
+    LESSON_SCROLL_DELTA.fetch_add(delta as i32, Ordering::Relaxed);
 }
 
 fn on_enter_playing(config: Res<GameConfig>) {

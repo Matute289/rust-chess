@@ -33,6 +33,20 @@
   <div id="esc-hint">Tecla 'Esc' para abrir el menú</div>
   <button id="menu-btn" onclick="togglePause()">☰ Menú</button>
 
+  <!-- Feedback modal — pure HTML so the mobile keyboard can open -->
+  <div id="feedback-modal">
+    <div class="feedback-box">
+      <div class="feedback-title">Reportar problema / Sugerencia</div>
+      <label class="feedback-label" for="feedback-textarea">Escribí tu mensaje:</label>
+      <textarea id="feedback-textarea" maxlength="2000" rows="5" placeholder="Escribí aquí..."></textarea>
+      <div class="feedback-btn-row">
+        <button class="feedback-btn feedback-btn-cancel" onclick="window.closeFeedbackModal()">Cancelar</button>
+        <button class="feedback-btn feedback-btn-send"   onclick="window.sendFeedback()">Enviar</button>
+      </div>
+      <div id="feedback-status"></div>
+    </div>
+  </div>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>

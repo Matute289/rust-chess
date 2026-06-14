@@ -4,6 +4,7 @@ html {
   height: 100%;
   overflow: hidden;
   touch-action: none;
+  overscroll-behavior: none;
 }
 
 body {
@@ -13,6 +14,7 @@ body {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  overscroll-behavior: none;
 }
 
 #canvas {
@@ -166,5 +168,89 @@ body {
 }
 .pause-nav-btn.pause-home:hover {
   background: rgba(160, 40, 40, 0.95);
+}
+
+/* Feedback modal */
+#feedback-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.80);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+#feedback-modal.open {
+  display: flex;
+}
+.feedback-box {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(480px, 92vw);
+  padding: 28px;
+  background: rgba(10, 10, 30, 0.97);
+  border: 1px solid rgba(100, 100, 180, 0.50);
+  border-radius: 10px;
+  font-family: monospace;
+}
+.feedback-title {
+  font-size: clamp(15px, 4vw, 20px);
+  font-weight: 700;
+  color: #ddddf8;
+  letter-spacing: 0.5px;
+}
+.feedback-label {
+  font-size: 13px;
+  color: rgba(160, 160, 210, 0.85);
+}
+#feedback-textarea {
+  width: 100%;
+  min-height: 110px;
+  padding: 12px;
+  background: rgba(5, 5, 20, 0.95);
+  border: 1.5px solid rgba(130, 130, 220, 0.80);
+  border-radius: 6px;
+  color: #e8e8ff;
+  font-family: monospace;
+  font-size: clamp(14px, 3.5vw, 16px);
+  resize: vertical;
+  outline: none;
+}
+#feedback-textarea:focus {
+  border-color: rgba(160, 160, 255, 1.0);
+}
+.feedback-btn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.feedback-btn {
+  padding: 9px 24px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: clamp(14px, 3.5vw, 16px);
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.feedback-btn-cancel {
+  background: rgba(50, 15, 15, 0.90);
+  border-color: rgba(140, 60, 60, 0.55);
+  color: #e8a0a0;
+}
+.feedback-btn-send {
+  background: rgba(15, 60, 15, 0.90);
+  border-color: rgba(60, 160, 60, 0.60);
+  color: #90e890;
+}
+#feedback-status {
+  font-size: 13px;
+  color: rgba(130, 220, 140, 0.90);
+  min-height: 18px;
+  text-align: center;
 }
 

@@ -1,7 +1,8 @@
-import init, { go_to_pvl_hub, go_to_home } from './pkg/bevy_chess.js';
+import init, { go_to_pvl_hub, go_to_home, bevy_lesson_scroll } from './pkg/bevy_chess.js';
 
 const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 let isPaused = false;
+let canvasScale = 1.0;
 
 window.show_game_controls = () => {
   if (isTouchDevice) {
@@ -34,6 +35,7 @@ function fitCanvas() {
   let factor = Math.min(scaleX, scaleY);
   if (!isTouchDevice) factor = Math.min(factor, 1.0); // desktop: don't upscale
   canvas.style.transform = `translate(-50%, -50%) scale(${factor})`;
+  canvasScale = factor;
 }
 
 function closePause() {
@@ -79,7 +81,67 @@ window.addEventListener('resize', () => {
   fitCanvas();
 });
 
-// Boot
+// ─── Feedback modal ───────────────────────────────────────────────────────────
+
+let feedbackContext = 'home';
+
+window.show_feedback_modal = function(context) {
+  feedbackContext = context || 'home';
+  document.getElementById('feedback-textarea').value = '';
+  document.getElementById('feedback-status').textContent = '';
+  document.getElementById('feedback-modal').classList.add('open');
+  // Delay focus so the keyboard opens reliably on mobile
+  setTimeout(() => document.getElementById('feedback-textarea').focus(), 80);
+};
+
+window.closeFeedbackModal = function() {
+  document.getElementById('feedback-modal').classList.remove('open');
+};
+
+window.sendFeedback = async function() {
+  const text = document.getElementById('feedback-textarea').value.trim();
+  if (!text) return;
+  const status = document.getElementById('feedback-status');
+  status.textContent = 'Enviando...';
+  try {
+    const resp = await fetch('https://rustchess.greenmountain.dev/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, context: feedbackContext }),
+    });
+    if (resp.ok) {
+      status.textContent = '¡Gracias! Recibimos tu mensaje.';
+      setTimeout(() => window.closeFeedbackModal(), 2000);
+    } else {
+      status.textContent = 'Error al enviar. Intentá de nuevo.';
+    }
+  } catch {
+    status.textContent = 'Error de red. Intentá de nuevo.';
+  }
+};
+
+// Close on backdrop click
+document.getElementById('feedback-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('feedback-modal')) window.closeFeedbackModal();
+});
+
+// ─── Touch scroll for lesson list ─────────────────────────────────────────────
+
+let touchStartY = 0;
+
+document.getElementById('canvas').addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) touchStartY = e.touches[0].clientY;
+}, { passive: true });
+
+document.getElementById('canvas').addEventListener('touchmove', (e) => {
+  if (e.touches.length !== 1) return;
+  const dy = (touchStartY - e.touches[0].clientY) / (canvasScale || 1.0);
+  touchStartY = e.touches[0].clientY;
+  try { bevy_lesson_scroll(dy); } catch {}
+  e.preventDefault();
+}, { passive: false });
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
 // wasm-bindgen throws a control-flow exception to exit the Bevy loop setup — not a real error
 try {
   await init();

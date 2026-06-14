@@ -98,6 +98,16 @@ pub enum LessonsTab { #[default] List, Table }
 #[derive(Component)] struct BtnModeGuided;
 #[derive(Component)] struct BtnTabList;
 #[derive(Component)] struct BtnTabTable;
+#[derive(Component)] struct LessonScrollInner;
+#[derive(Component)] struct LessonConfirmPanel;
+#[derive(Component)] struct BtnConfirmStart(usize);
+#[derive(Component)] struct BtnConfirmCancel;
+
+#[derive(Resource, Default)]
+struct SelectedLesson(Option<(usize, String)>);
+
+#[derive(Resource, Default)]
+pub struct LessonScrollOffset(pub f32);
 
 // ─── Components (Playing overlay) ────────────────────────────────────────────
 
@@ -318,74 +328,90 @@ fn build_lessons_root(
             p.spawn(TextBundle::from_section(text, TextStyle { font: font.clone(), font_size: 17.0, color }));
         });
 
-        // ── Content area ──
+        // ── Content area (clips overflow, inner node scrolls via top offset) ──
         root.spawn(NodeBundle {
             style: Style {
                 width: Val::Px(600.0), flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(5.0), flex_grow: 1.0, overflow: Overflow::clip_y(),
+                flex_grow: 1.0, overflow: Overflow::clip_y(),
                 ..default()
             },
             ..default()
         })
         .with_children(|content| {
-            if tab == LessonsTab::List {
-                for (idx, lesson) in filtered.iter() {
-                    let stars = progress.get(*idx);
-                    let (bg, border, text_color) = lesson_row_colors(stars);
-                    content.spawn((
-                        ButtonBundle {
-                            style: Style {
-                                width: Val::Px(580.0), flex_direction: FlexDirection::Row,
-                                justify_content: JustifyContent::SpaceBetween,
-                                align_items: AlignItems::Center,
-                                padding: UiRect { left: Val::Px(18.0), right: Val::Px(14.0), top: Val::Px(11.0), bottom: Val::Px(11.0) },
-                                border: UiRect::all(Val::Px(1.0)), ..default()
+            content.spawn((
+                NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        row_gap:        Val::Px(5.0),
+                        width:          Val::Percent(100.0),
+                        position_type:  PositionType::Relative,
+                        top:            Val::Px(0.0),
+                        ..default()
+                    },
+                    ..default()
+                },
+                LessonScrollInner,
+            ))
+            .with_children(|inner| {
+                if tab == LessonsTab::List {
+                    for (idx, lesson) in filtered.iter() {
+                        let stars = progress.get(*idx);
+                        let (bg, border, text_color) = lesson_row_colors(stars);
+                        inner.spawn((
+                            ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(580.0), flex_direction: FlexDirection::Row,
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect { left: Val::Px(18.0), right: Val::Px(14.0), top: Val::Px(11.0), bottom: Val::Px(11.0) },
+                                    border: UiRect::all(Val::Px(1.0)), ..default()
+                                },
+                                background_color: BackgroundColor(bg),
+                                border_color:     BorderColor(border),
+                                ..default()
                             },
-                            background_color: BackgroundColor(bg),
-                            border_color:     BorderColor(border),
-                            ..default()
-                        },
-                        BtnLessonStart(*idx),
-                        OriginalBg(bg),
-                    ))
-                    .with_children(|row| {
-                        row.spawn(TextBundle::from_section(
-                            format!("{}. {}", idx + 1, lesson.title),
-                            TextStyle { font: font.clone(), font_size: 19.0, color: text_color },
+                            BtnLessonStart(*idx),
+                            OriginalBg(bg),
+                        ))
+                        .with_children(|row| {
+                            row.spawn(TextBundle::from_section(
+                                format!("{}. {}", idx + 1, lesson.title),
+                                TextStyle { font: font.clone(), font_size: 19.0, color: text_color },
+                            ));
+                            row.spawn(TextBundle::from_section(
+                                star_string(stars),
+                                TextStyle { font: font.clone(), font_size: 20.0,
+                                    color: if stars > 0 { Color::rgb(0.38, 0.95, 0.48) } else { Color::rgba(0.45, 0.45, 0.62, 0.80) }
+                                },
+                            ));
+                        });
+                    }
+                    if filtered.is_empty() {
+                        inner.spawn(TextBundle::from_section(
+                            "No se encontraron lecciones.",
+                            TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgba(0.55, 0.55, 0.70, 1.0) },
                         ));
-                        row.spawn(TextBundle::from_section(
-                            star_string(stars),
-                            TextStyle { font: font.clone(), font_size: 20.0,
-                                color: if stars > 0 { Color::rgb(0.38, 0.95, 0.48) } else { Color::rgba(0.45, 0.45, 0.62, 0.80) }
-                            },
+                    } else if overflow {
+                        inner.spawn(TextBundle::from_section(
+                            format!("Mostrando {} de {} — buscá para filtrar", PAGE_SIZE, all_filtered.len()),
+                            TextStyle { font: font.clone(), font_size: 15.0, color: Color::rgba(0.55, 0.55, 0.75, 0.85) },
                         ));
-                    });
+                    }
+                } else {
+                    spawn_table_row(inner, &font, "#", "Lección", "Estado", true);
+                    for (idx, lesson) in filtered.iter() {
+                        let stars = progress.get(*idx);
+                        let status = match stars { 0 => "Pendiente", 1 => "●○  Guiado", _ => "●●  Hecha" };
+                        spawn_table_row(inner, &font, &format!("{}", idx + 1), &lesson.title, status, false);
+                    }
+                    if filtered.is_empty() {
+                        inner.spawn(TextBundle::from_section(
+                            "No se encontraron lecciones.",
+                            TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgba(0.55, 0.55, 0.70, 1.0) },
+                        ));
+                    }
                 }
-                if filtered.is_empty() {
-                    content.spawn(TextBundle::from_section(
-                        "No se encontraron lecciones.",
-                        TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgba(0.55, 0.55, 0.70, 1.0) },
-                    ));
-                } else if overflow {
-                    content.spawn(TextBundle::from_section(
-                        format!("Mostrando {} de {} — buscá para filtrar", PAGE_SIZE, all_filtered.len()),
-                        TextStyle { font: font.clone(), font_size: 15.0, color: Color::rgba(0.55, 0.55, 0.75, 0.85) },
-                    ));
-                }
-            } else {
-                spawn_table_row(content, &font, "#", "Lección", "Estado", true);
-                for (idx, lesson) in filtered.iter() {
-                    let stars = progress.get(*idx);
-                    let status = match stars { 0 => "Pendiente", 1 => "●○  Guiado", _ => "●●  Hecha" };
-                    spawn_table_row(content, &font, &format!("{}", idx + 1), &lesson.title, status, false);
-                }
-                if filtered.is_empty() {
-                    content.spawn(TextBundle::from_section(
-                        "No se encontraron lecciones.",
-                        TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgba(0.55, 0.55, 0.70, 1.0) },
-                    ));
-                }
-            }
+            });
         });
 
         // ── Back button ──
@@ -444,10 +470,13 @@ fn poll_lessons_asset(
     assets:       Res<Assets<LessonsAsset>>,
     mut loaded:   ResMut<LoadedLessons>,
     root_q:       Query<Entity, With<LessonsRoot>>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
     cached:       Res<CachedProgress>,
     mode:         Res<SelectedLessonMode>,
     sq:           Res<SearchQuery>,
     tab:          Res<LessonsTab>,
+    mut selected: ResMut<SelectedLesson>,
+    mut scroll:   ResMut<LessonScrollOffset>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
@@ -455,11 +484,9 @@ fn poll_lessons_asset(
     let Some(h) = &handle.0 else { return };
     let Some(asset) = assets.get(h) else { return };
     loaded.0 = asset.lessons.clone();
-    // Rebuild UI if Lessons screen is open
     if !root_q.is_empty() {
         let p = cached.0.clone().unwrap_or_default();
-        for e in &root_q { commands.entity(e).despawn_recursive(); }
-        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab, &loaded.0);
+        clear_selection_and_rebuild(&mut commands, &asset_server, &root_q, &confirm_q, &mut selected, &mut scroll, &p, mode.0, &sq.0, *tab, &loaded.0);
     }
 }
 
@@ -475,8 +502,10 @@ fn setup_lessons(
     mut sq:       ResMut<SearchQuery>,
     tab:          Res<LessonsTab>,
     loaded:       Res<LoadedLessons>,
+    mut scroll:   ResMut<LessonScrollOffset>,
 ) {
     sq.0.clear();
+    scroll.0 = 0.0;
     if let Ok(mut g) = fetch_state.0.try_lock() { *g = None; }
     #[cfg(target_arch = "wasm32")]
     if let Some(jwt) = session.jwt.clone() {
@@ -492,8 +521,17 @@ fn setup_lessons(
     build_lessons_root(&mut commands, &asset_server, &progress, mode.0, &sq.0, *tab, &loaded.0);
 }
 
-fn despawn_lessons(mut commands: Commands, q: Query<Entity, With<LessonsRoot>>) {
-    for e in &q { commands.entity(e).despawn_recursive(); }
+fn despawn_lessons(
+    mut commands: Commands,
+    q:            Query<Entity, With<LessonsRoot>>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
+    mut selected: ResMut<SelectedLesson>,
+    mut scroll:   ResMut<LessonScrollOffset>,
+) {
+    for e in &q         { commands.entity(e).despawn_recursive(); }
+    for e in &confirm_q { commands.entity(e).despawn_recursive(); }
+    *selected = SelectedLesson(None);
+    scroll.0   = 0.0;
 }
 
 fn poll_progress_result(
@@ -504,22 +542,42 @@ fn poll_progress_result(
     tab:          Res<LessonsTab>,
     loaded:       Res<LoadedLessons>,
     root_q:       Query<Entity, With<LessonsRoot>>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
+    mut selected: ResMut<SelectedLesson>,
+    mut scroll:   ResMut<LessonScrollOffset>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
     if let Ok(mut guard) = fetch_state.0.try_lock() {
         if let Some(p) = guard.take() {
             cached.0 = Some(p.clone());
-            for e in &root_q { commands.entity(e).despawn_recursive(); }
-            build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab, &loaded.0);
+            clear_selection_and_rebuild(&mut commands, &asset_server, &root_q, &confirm_q, &mut selected, &mut scroll, &p, mode.0, &sq.0, *tab, &loaded.0);
         }
     }
 }
 
 // ─── Button handlers (Lessons screen) ────────────────────────────────────────
 
-fn handle_lesson_start(
-    q:                Query<(&Interaction, &BtnLessonStart), Changed<Interaction>>,
+fn handle_lesson_select(
+    q:            Query<(&Interaction, &BtnLessonStart), Changed<Interaction>>,
+    loaded:       Res<LoadedLessons>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
+    mut selected: ResMut<SelectedLesson>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    for (i, btn) in &q {
+        if *i != Interaction::Pressed { continue; }
+        let idx = btn.0;
+        let Some(lesson) = loaded.0.get(idx) else { continue };
+        for e in &confirm_q { commands.entity(e).despawn_recursive(); }
+        *selected = SelectedLesson(Some((idx, lesson.title.clone())));
+        spawn_confirm_panel(&mut commands, &asset_server, idx, &lesson.title);
+    }
+}
+
+fn handle_confirm_start(
+    q:                Query<(&Interaction, &BtnConfirmStart), Changed<Interaction>>,
     mut lesson_setup: ResMut<LessonSetup>,
     mut game_config:  ResMut<GameConfig>,
     mode:             Res<SelectedLessonMode>,
@@ -547,6 +605,20 @@ fn handle_lesson_start(
     }
 }
 
+fn handle_confirm_cancel(
+    q:            Query<&Interaction, (Changed<Interaction>, With<BtnConfirmCancel>)>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
+    mut selected: ResMut<SelectedLesson>,
+    mut commands: Commands,
+) {
+    for i in &q {
+        if *i == Interaction::Pressed {
+            for e in &confirm_q { commands.entity(e).despawn_recursive(); }
+            *selected = SelectedLesson(None);
+        }
+    }
+}
+
 fn handle_lessons_back(
     q: Query<&Interaction, (Changed<Interaction>, With<BtnLessonsBack>)>,
     mut next_state: ResMut<NextState<AppState>>,
@@ -556,14 +628,37 @@ fn handle_lessons_back(
     }
 }
 
+fn clear_selection_and_rebuild(
+    commands:     &mut Commands,
+    asset_server: &AssetServer,
+    root_q:       &Query<Entity, With<LessonsRoot>>,
+    confirm_q:    &Query<Entity, With<LessonConfirmPanel>>,
+    selected:     &mut SelectedLesson,
+    scroll:       &mut LessonScrollOffset,
+    progress:     &LoadedProgress,
+    mode:         LessonMode,
+    sq:           &str,
+    tab:          LessonsTab,
+    lessons:      &[LessonJson],
+) {
+    for e in root_q    { commands.entity(e).despawn_recursive(); }
+    for e in confirm_q { commands.entity(e).despawn_recursive(); }
+    *selected = SelectedLesson(None);
+    scroll.0   = 0.0;
+    build_lessons_root(commands, asset_server, progress, mode, sq, tab, lessons);
+}
+
 fn handle_mode_interactive(
-    q:        Query<&Interaction, (Changed<Interaction>, With<BtnModeInteractive>)>,
-    mut mode: ResMut<SelectedLessonMode>,
-    sq:       Res<SearchQuery>,
-    tab:      Res<LessonsTab>,
-    loaded:   Res<LoadedLessons>,
-    root_q:   Query<Entity, With<LessonsRoot>>,
-    cached:   Res<CachedProgress>,
+    q:            Query<&Interaction, (Changed<Interaction>, With<BtnModeInteractive>)>,
+    mut mode:     ResMut<SelectedLessonMode>,
+    sq:           Res<SearchQuery>,
+    tab:          Res<LessonsTab>,
+    loaded:       Res<LoadedLessons>,
+    root_q:       Query<Entity, With<LessonsRoot>>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
+    cached:       Res<CachedProgress>,
+    mut selected: ResMut<SelectedLesson>,
+    mut scroll:   ResMut<LessonScrollOffset>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
@@ -571,19 +666,21 @@ fn handle_mode_interactive(
         if *i != Interaction::Pressed { continue; }
         mode.0 = LessonMode::Interactive;
         let p = cached.0.clone().unwrap_or_default();
-        for e in &root_q { commands.entity(e).despawn_recursive(); }
-        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab, &loaded.0);
+        clear_selection_and_rebuild(&mut commands, &asset_server, &root_q, &confirm_q, &mut selected, &mut scroll, &p, mode.0, &sq.0, *tab, &loaded.0);
     }
 }
 
 fn handle_mode_guided(
-    q:        Query<&Interaction, (Changed<Interaction>, With<BtnModeGuided>)>,
-    mut mode: ResMut<SelectedLessonMode>,
-    sq:       Res<SearchQuery>,
-    tab:      Res<LessonsTab>,
-    loaded:   Res<LoadedLessons>,
-    root_q:   Query<Entity, With<LessonsRoot>>,
-    cached:   Res<CachedProgress>,
+    q:            Query<&Interaction, (Changed<Interaction>, With<BtnModeGuided>)>,
+    mut mode:     ResMut<SelectedLessonMode>,
+    sq:           Res<SearchQuery>,
+    tab:          Res<LessonsTab>,
+    loaded:       Res<LoadedLessons>,
+    root_q:       Query<Entity, With<LessonsRoot>>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
+    cached:       Res<CachedProgress>,
+    mut selected: ResMut<SelectedLesson>,
+    mut scroll:   ResMut<LessonScrollOffset>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
@@ -591,19 +688,21 @@ fn handle_mode_guided(
         if *i != Interaction::Pressed { continue; }
         mode.0 = LessonMode::Guided;
         let p = cached.0.clone().unwrap_or_default();
-        for e in &root_q { commands.entity(e).despawn_recursive(); }
-        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab, &loaded.0);
+        clear_selection_and_rebuild(&mut commands, &asset_server, &root_q, &confirm_q, &mut selected, &mut scroll, &p, mode.0, &sq.0, *tab, &loaded.0);
     }
 }
 
 fn handle_tab_list(
-    q:        Query<&Interaction, (Changed<Interaction>, With<BtnTabList>)>,
-    mut tab:  ResMut<LessonsTab>,
-    sq:       Res<SearchQuery>,
-    mode:     Res<SelectedLessonMode>,
-    loaded:   Res<LoadedLessons>,
-    root_q:   Query<Entity, With<LessonsRoot>>,
-    cached:   Res<CachedProgress>,
+    q:            Query<&Interaction, (Changed<Interaction>, With<BtnTabList>)>,
+    mut tab:      ResMut<LessonsTab>,
+    sq:           Res<SearchQuery>,
+    mode:         Res<SelectedLessonMode>,
+    loaded:       Res<LoadedLessons>,
+    root_q:       Query<Entity, With<LessonsRoot>>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
+    cached:       Res<CachedProgress>,
+    mut selected: ResMut<SelectedLesson>,
+    mut scroll:   ResMut<LessonScrollOffset>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
@@ -611,19 +710,21 @@ fn handle_tab_list(
         if *i != Interaction::Pressed { continue; }
         *tab = LessonsTab::List;
         let p = cached.0.clone().unwrap_or_default();
-        for e in &root_q { commands.entity(e).despawn_recursive(); }
-        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab, &loaded.0);
+        clear_selection_and_rebuild(&mut commands, &asset_server, &root_q, &confirm_q, &mut selected, &mut scroll, &p, mode.0, &sq.0, *tab, &loaded.0);
     }
 }
 
 fn handle_tab_table(
-    q:        Query<&Interaction, (Changed<Interaction>, With<BtnTabTable>)>,
-    mut tab:  ResMut<LessonsTab>,
-    sq:       Res<SearchQuery>,
-    mode:     Res<SelectedLessonMode>,
-    loaded:   Res<LoadedLessons>,
-    root_q:   Query<Entity, With<LessonsRoot>>,
-    cached:   Res<CachedProgress>,
+    q:            Query<&Interaction, (Changed<Interaction>, With<BtnTabTable>)>,
+    mut tab:      ResMut<LessonsTab>,
+    sq:           Res<SearchQuery>,
+    mode:         Res<SelectedLessonMode>,
+    loaded:       Res<LoadedLessons>,
+    root_q:       Query<Entity, With<LessonsRoot>>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
+    cached:       Res<CachedProgress>,
+    mut selected: ResMut<SelectedLesson>,
+    mut scroll:   ResMut<LessonScrollOffset>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
@@ -631,8 +732,7 @@ fn handle_tab_table(
         if *i != Interaction::Pressed { continue; }
         *tab = LessonsTab::Table;
         let p = cached.0.clone().unwrap_or_default();
-        for e in &root_q { commands.entity(e).despawn_recursive(); }
-        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab, &loaded.0);
+        clear_selection_and_rebuild(&mut commands, &asset_server, &root_q, &confirm_q, &mut selected, &mut scroll, &p, mode.0, &sq.0, *tab, &loaded.0);
     }
 }
 
@@ -643,7 +743,10 @@ fn handle_search_input(
     mode:         Res<SelectedLessonMode>,
     loaded:       Res<LoadedLessons>,
     root_q:       Query<Entity, With<LessonsRoot>>,
+    confirm_q:    Query<Entity, With<LessonConfirmPanel>>,
     cached:       Res<CachedProgress>,
+    mut selected: ResMut<SelectedLesson>,
+    mut scroll:   ResMut<LessonScrollOffset>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
@@ -662,8 +765,7 @@ fn handle_search_input(
     }
     if changed {
         let p = cached.0.clone().unwrap_or_default();
-        for e in &root_q { commands.entity(e).despawn_recursive(); }
-        build_lessons_root(&mut commands, &asset_server, &p, mode.0, &sq.0, *tab, &loaded.0);
+        clear_selection_and_rebuild(&mut commands, &asset_server, &root_q, &confirm_q, &mut selected, &mut scroll, &p, mode.0, &sq.0, *tab, &loaded.0);
     }
 }
 
@@ -1018,6 +1120,111 @@ fn lesson_retry_enter(mut next: ResMut<NextState<AppState>>) {
     next.set(AppState::Playing);
 }
 
+// ─── Lesson scroll ────────────────────────────────────────────────────────────
+
+fn handle_lesson_scroll(
+    mut wheel:  EventReader<bevy::input::mouse::MouseWheel>,
+    mut scroll: ResMut<LessonScrollOffset>,
+) {
+    for ev in wheel.read() {
+        use bevy::input::mouse::MouseScrollUnit;
+        let speed = match ev.unit { MouseScrollUnit::Line => 45.0, MouseScrollUnit::Pixel => 1.0 };
+        scroll.0 = (scroll.0 - ev.y * speed).max(0.0);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let js = crate::LESSON_SCROLL_DELTA.swap(0, std::sync::atomic::Ordering::Relaxed) as f32;
+        if js.abs() > 0.5 {
+            scroll.0 = (scroll.0 + js).max(0.0);
+        }
+    }
+}
+
+fn apply_lesson_scroll(
+    scroll: Res<LessonScrollOffset>,
+    mut q:  Query<&mut Style, With<LessonScrollInner>>,
+) {
+    if !scroll.is_changed() { return; }
+    for mut style in &mut q {
+        style.top = Val::Px(-scroll.0);
+    }
+}
+
+// ─── Confirm panel ────────────────────────────────────────────────────────────
+
+fn spawn_confirm_panel(commands: &mut Commands, asset_server: &AssetServer, idx: usize, title: &str) {
+    let font: Handle<Font> = asset_server.load("fonts/DejaVuSans-Bold.ttf");
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type:   PositionType::Absolute,
+                bottom:          Val::Px(0.0),
+                left:            Val::Px(0.0),
+                right:           Val::Px(0.0),
+                flex_direction:  FlexDirection::Column,
+                align_items:     AlignItems::Center,
+                padding:         UiRect { top: Val::Px(16.0), bottom: Val::Px(18.0), left: Val::Px(12.0), right: Val::Px(12.0) },
+                row_gap:         Val::Px(10.0),
+                border:          UiRect { top: Val::Px(1.0), ..default() },
+                ..default()
+            },
+            background_color: BackgroundColor(Color::rgba(0.04, 0.06, 0.16, 0.97)),
+            border_color:     BorderColor(Color::rgba(0.40, 0.65, 0.40, 0.50)),
+            z_index: ZIndex::Global(20),
+            ..default()
+        },
+        LessonConfirmPanel,
+    ))
+    .with_children(|p| {
+        p.spawn(TextBundle::from_section(
+            format!("#{} — {}", idx + 1, title),
+            TextStyle { font: font.clone(), font_size: 20.0, color: Color::rgb(0.92, 0.92, 1.00) },
+        ));
+        p.spawn(TextBundle::from_section(
+            "¿Querés arrancar esta lección?",
+            TextStyle { font: font.clone(), font_size: 15.0, color: Color::rgba(0.68, 0.68, 0.85, 0.90) },
+        ));
+        p.spawn(NodeBundle {
+            style: Style { flex_direction: FlexDirection::Row, column_gap: Val::Px(16.0), ..default() },
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                ButtonBundle {
+                    style: Style {
+                        padding: UiRect { left: Val::Px(28.0), right: Val::Px(28.0), top: Val::Px(11.0), bottom: Val::Px(11.0) },
+                        border:  UiRect::all(Val::Px(1.0)), ..default()
+                    },
+                    background_color: BackgroundColor(Color::rgba(0.20, 0.06, 0.06, 0.92)),
+                    border_color:     BorderColor(Color::rgba(0.60, 0.25, 0.25, 0.55)),
+                    ..default()
+                },
+                BtnConfirmCancel,
+            ))
+            .with_children(|p| {
+                p.spawn(TextBundle::from_section("Cancelar",
+                    TextStyle { font: font.clone(), font_size: 18.0, color: Color::rgb(0.90, 0.68, 0.68) }));
+            });
+            row.spawn((
+                ButtonBundle {
+                    style: Style {
+                        padding: UiRect { left: Val::Px(28.0), right: Val::Px(28.0), top: Val::Px(11.0), bottom: Val::Px(11.0) },
+                        border:  UiRect::all(Val::Px(1.0)), ..default()
+                    },
+                    background_color: BackgroundColor(Color::rgba(0.06, 0.26, 0.06, 0.92)),
+                    border_color:     BorderColor(Color::rgba(0.25, 0.68, 0.25, 0.60)),
+                    ..default()
+                },
+                BtnConfirmStart(idx),
+            ))
+            .with_children(|p| {
+                p.spawn(TextBundle::from_section("▶ Arrancar",
+                    TextStyle { font: font.clone(), font_size: 18.0, color: Color::rgb(0.68, 0.95, 0.68) }));
+            });
+        });
+    });
+}
+
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
 pub struct LessonsPlugin;
@@ -1034,6 +1241,8 @@ impl Plugin for LessonsPlugin {
             .init_resource::<SelectedLessonMode>()
             .init_resource::<SearchQuery>()
             .init_resource::<LessonsTab>()
+            .init_resource::<SelectedLesson>()
+            .init_resource::<LessonScrollOffset>()
             // Load the JSON file at startup
             .add_systems(Startup, init_lessons_asset)
             // Poll asset loading every frame (cheap — no-op once loaded)
@@ -1042,13 +1251,17 @@ impl Plugin for LessonsPlugin {
             .add_systems(OnEnter(AppState::Lessons), setup_lessons)
             .add_systems(OnExit(AppState::Lessons),  despawn_lessons)
             .add_systems(Update, (
-                handle_lesson_start,
+                handle_lesson_select,
+                handle_confirm_start,
+                handle_confirm_cancel,
                 handle_lessons_back,
                 handle_mode_interactive,
                 handle_mode_guided,
                 handle_tab_list,
                 handle_tab_table,
                 handle_search_input,
+                handle_lesson_scroll,
+                apply_lesson_scroll,
                 highlight_lesson_btns,
                 highlight_nav_btns,
                 poll_progress_result,
