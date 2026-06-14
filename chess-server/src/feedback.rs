@@ -1,4 +1,8 @@
 use axum::{extract::State, Json};
+use lettre::{
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    transport::smtp::authentication::Credentials,
+};
 use serde::Deserialize;
 use crate::{AppState, error::AppError};
 
@@ -27,29 +31,39 @@ pub async fn post_feedback(
         .await
         .map_err(anyhow::Error::from)?;
 
-    if let Some(ref key) = state.config.resend_api_key {
-        let ctx = body.context.as_deref().unwrap_or("app");
-        if let Err(e) = send_email(key, &msg, ctx).await {
-            tracing::warn!("email send failed: {e:#}");
-        }
+    let ctx = body.context.as_deref().unwrap_or("app");
+    if let Err(e) = send_email(&state, &msg, ctx).await {
+        tracing::warn!("email send failed: {e:#}");
     }
 
     Ok(())
 }
 
-async fn send_email(api_key: &str, message: &str, context: &str) -> anyhow::Result<()> {
-    let client = reqwest::Client::new();
-    let payload = serde_json::json!({
-        "from":    "RustChess <onboarding@resend.dev>",
-        "to":      ["maticgrinberg@gmail.com"],
-        "subject": format!("RustChess Feedback [{}]", context),
-        "text":    message,
-    });
-    client
-        .post("https://api.resend.com/emails")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&payload)
-        .send()
-        .await?;
+async fn send_email(state: &AppState, message: &str, context: &str) -> anyhow::Result<()> {
+    let cfg = &state.config;
+
+    let email = Message::builder()
+        .from(format!("RustChess <no-reply@greenmountain.dev>").parse()?)
+        .to("mgrinberg@greenmountain.dev".parse()?)
+        .subject(format!("RustChess Feedback [{}]", context))
+        .body(message.to_string())?;
+
+    let transport: AsyncSmtpTransport<Tokio1Executor> =
+        match (&cfg.smtp_user, &cfg.smtp_pass) {
+            (Some(user), Some(pass)) => {
+                let creds = Credentials::new(user.clone(), pass.clone());
+                AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.smtp_host)?
+                    .port(cfg.smtp_port)
+                    .credentials(creds)
+                    .build()
+            }
+            _ => {
+                AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&cfg.smtp_host)
+                    .port(cfg.smtp_port)
+                    .build()
+            }
+        };
+
+    transport.send(email).await?;
     Ok(())
 }

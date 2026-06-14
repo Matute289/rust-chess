@@ -12,7 +12,10 @@ pub struct Config {
     pub discord_client_secret: String,
     pub frontend_url:          String,
     pub port:                  u16,
-    pub resend_api_key:        Option<String>,
+    pub smtp_host:             String,
+    pub smtp_port:             u16,
+    pub smtp_user:             Option<String>,
+    pub smtp_pass:             Option<String>,
 }
 
 impl Config {
@@ -29,7 +32,10 @@ impl Config {
             discord_client_secret: std::env::var("DISCORD_CLIENT_SECRET").context("DISCORD_CLIENT_SECRET must be set")?,
             frontend_url:          std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:8090".into()),
             port:                  std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8009),
-            resend_api_key:        std::env::var("RESEND_API_KEY").ok(),
+            smtp_host:             std::env::var("SMTP_HOST").unwrap_or_else(|_| "localhost".into()),
+            smtp_port:             std::env::var("SMTP_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(587),
+            smtp_user:             std::env::var("SMTP_USER").ok(),
+            smtp_pass:             std::env::var("SMTP_PASS").ok(),
         })
     }
 }
