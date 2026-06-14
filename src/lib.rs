@@ -4,6 +4,7 @@ mod analysis;
 mod auth;
 mod board;
 mod captured;
+mod feedback_ui;
 mod home;
 mod lessons;
 mod persistence;
@@ -23,11 +24,12 @@ use analysis::AnalysisPlugin;
 use auth::AuthPlugin;
 use board::BoardPlugin;
 use captured::CapturedPlugin;
+use feedback_ui::FeedbackUiPlugin;
 use home::HomePlugin;
+use lessons::LessonsPlugin;
 use persistence::PersistencePlugin;
 use pieces::PiecesPlugin;
 use pvl_hub::PvLHubPlugin;
-use lessons::LessonsPlugin;
 use state::{AppState, GameConfig, GameMode, LessonSetup};
 use suggestion::SuggestionPlugin;
 use ui::UIPlugin;
@@ -128,7 +130,7 @@ pub fn run_app() {
         .init_resource::<GameConfig>()
         .init_resource::<LessonSetup>()
         .add_plugins(AuthPlugin)
-        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin, SuggestionPlugin, AdaptiveAiPlugin, LessonsPlugin))
+        .add_plugins((HomePlugin, PvLHubPlugin, BoardPlugin, PiecesPlugin, CapturedPlugin, UIPlugin, AIPlugin, AnalysisPlugin, PersistencePlugin, SuggestionPlugin, AdaptiveAiPlugin, LessonsPlugin, FeedbackUiPlugin))
         .add_systems(OnEnter(AppState::Playing), on_enter_playing)
         .add_systems(OnEnter(AppState::Home),    on_enter_home)
         .add_systems(OnEnter(AppState::PvLHub),  on_enter_pvl_hub)

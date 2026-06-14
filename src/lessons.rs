@@ -404,7 +404,26 @@ fn build_lessons_root(
         ))
         .with_children(|p| {
             p.spawn(TextBundle::from_section("← Menú Learning",
-                TextStyle { font, font_size: 18.0, color: Color::rgb(0.72, 0.72, 0.88) }));
+                TextStyle { font: font.clone(), font_size: 18.0, color: Color::rgb(0.72, 0.72, 0.88) }));
+        });
+
+        // ── Suggest a lesson ──
+        root.spawn((
+            ButtonBundle {
+                style: Style {
+                    padding: UiRect { left: Val::Px(8.0), right: Val::Px(8.0), top: Val::Px(4.0), bottom: Val::Px(4.0) },
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::NONE),
+                ..default()
+            },
+            crate::feedback_ui::BtnSuggestLesson,
+        ))
+        .with_children(|p| {
+            p.spawn(TextBundle::from_section(
+                "¿Falta una lección? Avisanos →",
+                TextStyle { font, font_size: 12.0, color: Color::rgba(0.40, 0.40, 0.58, 0.72) },
+            ));
         });
     });
 }

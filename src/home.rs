@@ -341,6 +341,24 @@ fn build_home_root(
                     make_btn(root, font.clone(), "Player VS Player",   BtnPvP);
                     make_btn(root, font.clone(), "Player VS Computer", BtnPvC);
                     make_btn(root, font.clone(), "Player VS Learning", BtnPvL);
+                    spacer(root, 28.0);
+                    root.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                padding: UiRect { left: Val::Px(10.0), right: Val::Px(10.0), top: Val::Px(4.0), bottom: Val::Px(4.0) },
+                                ..default()
+                            },
+                            background_color: BackgroundColor(Color::NONE),
+                            ..default()
+                        },
+                        crate::feedback_ui::BtnFeedback,
+                    ))
+                    .with_children(|p| {
+                        p.spawn(TextBundle::from_section(
+                            "¿Bugs o sugerencias? Reportar →",
+                            TextStyle { font: font.clone(), font_size: 13.0, color: Color::rgba(0.42, 0.42, 0.60, 0.80) },
+                        ));
+                    });
                 }
                 HomeScreen::LoginPrompt => {
                     root.spawn(TextBundle::from_section(

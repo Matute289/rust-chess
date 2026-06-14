@@ -3,6 +3,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod feedback;
 mod games;
 mod lesson_progress;
 mod middleware;
@@ -53,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ai_profile",                axum::routing::patch(ai_profile::patch_ai_profile))
         .route("/api/lesson_progress",           get(lesson_progress::get_lesson_progress))
         .route("/api/lesson_progress",           post(lesson_progress::post_lesson_progress))
+        .route("/api/feedback",                  post(feedback::post_feedback))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
