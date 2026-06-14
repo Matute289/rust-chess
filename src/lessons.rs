@@ -329,10 +329,17 @@ fn build_lessons_root(
         });
 
         // ── Content area (clips overflow, inner node scrolls via top offset) ──
+        // min_height:0 + flex_basis:0 prevent children from inflating the flex item's
+        // base size, so flex_grow:1.0 fills exactly the remaining space without
+        // pushing the back button off screen.
         root.spawn(NodeBundle {
             style: Style {
-                width: Val::Px(600.0), flex_direction: FlexDirection::Column,
-                flex_grow: 1.0, overflow: Overflow::clip_y(),
+                width:      Val::Px(600.0),
+                flex_direction: FlexDirection::Column,
+                flex_grow:  1.0,
+                flex_shrink: 1.0,
+                min_height: Val::Px(0.0),
+                overflow:   Overflow::clip_y(),
                 ..default()
             },
             ..default()

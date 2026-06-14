@@ -83,7 +83,7 @@ fn on_enter_playing(config: Res<GameConfig>) {
     #[cfg(target_arch = "wasm32")]
     {
         show_game_controls();
-        set_pvl_mode(config.mode == GameMode::PvL);
+        set_pvl_mode(config.mode == GameMode::PvL || config.mode == GameMode::Lesson);
     }
     #[cfg(not(target_arch = "wasm32"))]
     let _ = config;
