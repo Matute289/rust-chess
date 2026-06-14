@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::text::BreakLineOn;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonState;
 use crate::{auth::UserSession, state::AppState};
@@ -37,6 +38,7 @@ fn spawn_modal(commands: &mut Commands, asset_server: &AssetServer, text: &str, 
             },
             background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.0, 0.78)),
             z_index: ZIndex::Global(60),
+            focus_policy: bevy::ui::FocusPolicy::Block,
             ..default()
         },
         FeedbackModalRoot,
@@ -46,9 +48,8 @@ fn spawn_modal(commands: &mut Commands, asset_server: &AssetServer, text: &str, 
             style: Style {
                 flex_direction: FlexDirection::Column,
                 padding:        UiRect::all(Val::Px(28.0)),
-                row_gap:        Val::Px(16.0),
-                min_width:      Val::Px(420.0),
-                max_width:      Val::Px(520.0),
+                row_gap:        Val::Px(14.0),
+                width:          Val::Px(480.0),
                 border:         UiRect::all(Val::Px(1.0)),
                 ..default()
             },
@@ -70,9 +71,9 @@ fn spawn_modal(commands: &mut Commands, asset_server: &AssetServer, text: &str, 
                 dlg.spawn((
                     ButtonBundle {
                         style: Style {
-                            padding: UiRect { left: Val::Px(24.0), right: Val::Px(24.0), top: Val::Px(8.0), bottom: Val::Px(8.0) },
+                            padding:    UiRect { left: Val::Px(24.0), right: Val::Px(24.0), top: Val::Px(8.0), bottom: Val::Px(8.0) },
                             align_self: AlignSelf::Center,
-                            border: UiRect::all(Val::Px(1.0)),
+                            border:     UiRect::all(Val::Px(1.0)),
                             ..default()
                         },
                         background_color: BackgroundColor(Color::rgba(0.14, 0.14, 0.30, 0.90)),
@@ -86,27 +87,56 @@ fn spawn_modal(commands: &mut Commands, asset_server: &AssetServer, text: &str, 
                         TextStyle { font: font.clone(), font_size: 16.0, color: Color::rgb(0.80, 0.80, 1.00) }));
                 });
             } else {
-                // Text input area
+                // Label above input
+                dlg.spawn(TextBundle::from_section(
+                    "Escribí tu mensaje:",
+                    TextStyle { font: font.clone(), font_size: 14.0, color: Color::rgba(0.65, 0.65, 0.85, 0.90) },
+                ));
+
+                // Text input area — fixed width + overflow clip forces text to wrap
                 dlg.spawn(NodeBundle {
                     style: Style {
-                        padding:    UiRect::all(Val::Px(12.0)),
-                        min_height: Val::Px(90.0),
-                        border:     UiRect::all(Val::Px(1.0)),
+                        width:          Val::Percent(100.0),
+                        min_height:     Val::Px(90.0),
+                        padding:        UiRect::all(Val::Px(12.0)),
+                        border:         UiRect::all(Val::Px(1.5)),
+                        overflow:       Overflow::clip(),
+                        flex_direction: FlexDirection::Column,
                         ..default()
                     },
+                    // Bright border signals "ready for input" without needing a click
                     background_color: BackgroundColor(Color::rgba(0.04, 0.04, 0.12, 0.95)),
-                    border_color:     BorderColor(Color::rgba(0.38, 0.38, 0.65, 0.70)),
+                    border_color:     BorderColor(Color::rgba(0.55, 0.55, 0.92, 0.88)),
                     ..default()
                 })
                 .with_children(|p| {
                     let (display, color) = if text.is_empty() {
-                        ("Escribí tu problema o sugerencia...".to_string(), Color::rgba(0.45, 0.45, 0.60, 0.80))
+                        (
+                            "▸ Escribí aquí...  _".to_string(),
+                            Color::rgba(0.48, 0.48, 0.65, 0.80),
+                        )
                     } else {
-                        (format!("{}_", text), Color::rgb(0.90, 0.90, 1.00))
+                        (format!("{}_", text), Color::rgb(0.92, 0.92, 1.00))
                     };
-                    p.spawn(TextBundle::from_section(display,
-                        TextStyle { font: font.clone(), font_size: 15.0, color }));
+                    p.spawn(TextBundle {
+                        text: Text {
+                            sections: vec![TextSection {
+                                value: display,
+                                style: TextStyle { font: font.clone(), font_size: 15.0, color },
+                            }],
+                            linebreak_behavior: BreakLineOn::AnyCharacter,
+                            ..default()
+                        },
+                        style: Style { width: Val::Percent(100.0), ..default() },
+                        ..default()
+                    });
                 });
+
+                // Keyboard hint
+                dlg.spawn(TextBundle::from_section(
+                    "Enter = nueva línea  ·  Esc = cerrar",
+                    TextStyle { font: font.clone(), font_size: 11.0, color: Color::rgba(0.40, 0.40, 0.58, 0.70) },
+                ));
 
                 // Button row
                 dlg.spawn(NodeBundle {
@@ -123,7 +153,7 @@ fn spawn_modal(commands: &mut Commands, asset_server: &AssetServer, text: &str, 
                         ButtonBundle {
                             style: Style {
                                 padding: UiRect { left: Val::Px(18.0), right: Val::Px(18.0), top: Val::Px(7.0), bottom: Val::Px(7.0) },
-                                border: UiRect::all(Val::Px(1.0)),
+                                border:  UiRect::all(Val::Px(1.0)),
                                 ..default()
                             },
                             background_color: BackgroundColor(Color::rgba(0.18, 0.08, 0.08, 0.90)),
@@ -141,7 +171,7 @@ fn spawn_modal(commands: &mut Commands, asset_server: &AssetServer, text: &str, 
                         ButtonBundle {
                             style: Style {
                                 padding: UiRect { left: Val::Px(18.0), right: Val::Px(18.0), top: Val::Px(7.0), bottom: Val::Px(7.0) },
-                                border: UiRect::all(Val::Px(1.0)),
+                                border:  UiRect::all(Val::Px(1.0)),
                                 ..default()
                             },
                             background_color: BackgroundColor(Color::rgba(0.08, 0.24, 0.08, 0.90)),
@@ -200,8 +230,14 @@ fn handle_feedback_input(
                     }
                 }
             }
-            Key::Backspace => { ui.text.pop(); changed = true; }
-            Key::Escape    => { close = true; }
+            Key::Space  => { ui.text.push(' ');  changed = true; }
+            Key::Enter  => { ui.text.push('\n'); changed = true; }
+            Key::Backspace => {
+                // Pop a full char (handles multi-byte UTF-8)
+                ui.text.pop();
+                changed = true;
+            }
+            Key::Escape => { close = true; }
             _ => {}
         }
     }
@@ -233,7 +269,7 @@ fn handle_feedback_send(
         #[cfg(target_arch = "wasm32")]
         {
             let text = ui.text.clone();
-            let _ = session.jwt.clone(); // suppress unused warning
+            let _ = session.jwt.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 post_feedback_async(text, "home".to_string()).await;
             });
@@ -263,9 +299,9 @@ fn handle_feedback_close(
 }
 
 fn handle_suggest_lesson(
-    q:       Query<&Interaction, (Changed<Interaction>, With<BtnSuggestLesson>)>,
+    q:        Query<&Interaction, (Changed<Interaction>, With<BtnSuggestLesson>)>,
     mut sent: Local<bool>,
-    session: Res<UserSession>,
+    session:  Res<UserSession>,
 ) {
     for i in &q {
         if *i != Interaction::Pressed { continue; }
