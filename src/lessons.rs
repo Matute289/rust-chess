@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     auth::UserSession,
     board::GameHistory,
+    pieces::{Piece, PieceType},
     state::{AppState, GameConfig, GameMode, LessonMode, LessonSetup},
 };
 
@@ -28,7 +29,7 @@ pub const LESSONS: [LessonData; 5] = [
         description: "La torre controla filas y columnas enteras. Buscá una línea directa hacia el rey enemigo sin piezas en el camino.",
         exercises: [
             LessonExercise { fen: "6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1", answer_uci: "e1e8", hint_text: "La torre en e1 puede alcanzar el rey en g8 por la columna e... pero el rey está en g8. ¿Hay una casilla en la misma fila?" },
-            LessonExercise { fen: "k7/pp6/1R6/8/8/8/8/1R5K w - - 0 1",     answer_uci: "b6b8", hint_text: "La torre en b6 puede subir por la columna b. El rey negro está en a8." },
+            LessonExercise { fen: "k7/8/KR6/8/8/8/8/8 w - - 0 1",           answer_uci: "b6b8", hint_text: "La torre en b6 sube por la columna b hasta b8. El rey blanco en a6 cubre a7 y b7, sin escape para el rey negro." },
             LessonExercise { fen: "6pk/7p/8/8/8/8/6Q1/6RK w - - 0 1",      answer_uci: "g2g8", hint_text: "La dama controla diagonales y rectas. ¿Cuál pieza puede dar jaque mate en g8?" },
         ],
     },
@@ -895,15 +896,46 @@ fn spawn_success_overlay(commands: &mut Commands, asset_server: &AssetServer, se
 fn handle_lesson_hint(
     q:            Query<&Interaction, (Changed<Interaction>, With<BtnLessonHint>)>,
     lesson_setup: Res<LessonSetup>,
+    pieces_q:     Query<&Piece>,
     mut hint:     ResMut<crate::state::Suggestion>,
 ) {
     for i in &q {
         if *i != Interaction::Pressed { continue; }
         let b = lesson_setup.answer_uci.as_bytes();
         if b.len() < 4 { continue; }
-        hint.from_sq = Some((b[1] - b'1', b[0] - b'a'));
-        hint.to_sq   = Some((b[3] - b'1', b[2] - b'a'));
-        hint.text    = Some("Pista: mové la pieza resaltada a la casilla indicada.".to_string());
+
+        let from_file = b[0] - b'a';
+        let from_rank = b[1] - b'1';
+        let to_file   = b[2] - b'a';
+        let to_rank   = b[3] - b'1';
+
+        hint.from_sq = Some((from_rank, from_file));
+        hint.to_sq   = Some((to_rank, to_file));
+
+        let piece_name = pieces_q.iter()
+            .find(|p| p.x == from_rank && p.y == from_file)
+            .map(|p| match p.piece_type {
+                PieceType::King   => "Rey",
+                PieceType::Queen  => "Dama",
+                PieceType::Bishop => "Alfil",
+                PieceType::Knight => "Caballo",
+                PieceType::Rook   => "Torre",
+                PieceType::Pawn   => "Peón",
+            })
+            .unwrap_or("pieza");
+
+        let from_label = format!("{}{}", b[0] as char, b[1] as char);
+        let to_label   = format!("{}{}", b[2] as char, b[3] as char);
+
+        let ex_hint = LESSONS.get(lesson_setup.lesson_idx)
+            .and_then(|l| l.exercises.get(lesson_setup.exercise_idx))
+            .map(|e| e.hint_text)
+            .unwrap_or("");
+
+        hint.text = Some(format!(
+            "Mové la {} de {} a {}  —  {}",
+            piece_name, from_label, to_label, ex_hint
+        ));
     }
 }
 
