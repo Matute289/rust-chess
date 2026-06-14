@@ -48,15 +48,16 @@ pub enum LessonMode {
 
 #[derive(Resource, Default, Clone)]
 pub struct LessonSetup {
-    pub lesson_idx:   usize,
-    pub exercise_idx: usize,
-    pub fen:          String,
-    pub answer_uci:   String,
-    pub lesson_mode:  LessonMode,
+    pub lesson_idx:  usize,
+    pub fen:         String,
+    pub answer_uci:  String,
+    pub lesson_mode: LessonMode,
+    pub title:       String,
+    pub description: String,
 }
 
 impl LessonSetup {
-    pub fn is_last_exercise(&self) -> bool { self.exercise_idx >= 2 }
+    pub fn is_last_exercise(&self) -> bool { true }
 }
 
 #[derive(Resource)]

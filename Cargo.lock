@@ -535,6 +535,7 @@ dependencies = [
  "getrandom 0.3.4",
  "gloo-net",
  "serde",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
