@@ -48,21 +48,12 @@ async fn send_email(state: &AppState, message: &str, context: &str) -> anyhow::R
         .subject(format!("RustChess Feedback [{}]", context))
         .body(message.to_string())?;
 
-    let transport: AsyncSmtpTransport<Tokio1Executor> =
-        match (&cfg.smtp_user, &cfg.smtp_pass) {
-            (Some(user), Some(pass)) => {
-                let creds = Credentials::new(user.clone(), pass.clone());
-                AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.smtp_host)?
-                    .port(cfg.smtp_port)
-                    .credentials(creds)
-                    .build()
-            }
-            _ => {
-                AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&cfg.smtp_host)
-                    .port(cfg.smtp_port)
-                    .build()
-            }
-        };
+    let mut builder = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&cfg.smtp_host)
+        .port(cfg.smtp_port);
+    if let (Some(user), Some(pass)) = (&cfg.smtp_user, &cfg.smtp_pass) {
+        builder = builder.credentials(Credentials::new(user.clone(), pass.clone()));
+    }
+    let transport = builder.build();
 
     transport.send(email).await?;
     Ok(())
