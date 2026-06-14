@@ -92,6 +92,7 @@ pub enum LessonsTab { #[default] List, Table }
 
 #[derive(Component)] struct LessonsRoot;
 #[derive(Component)] struct BtnLessonStart(usize);
+#[derive(Component)] struct OriginalBg(Color);
 #[derive(Component)] struct BtnLessonsBack;
 #[derive(Component)] struct BtnModeInteractive;
 #[derive(Component)] struct BtnModeGuided;
@@ -198,13 +199,17 @@ fn build_lessons_root(
     let single_star = progress.stars.values().filter(|&&s| s == 1).count();
     let total = lessons.len();
 
+    const PAGE_SIZE: usize = 200;
+
     let sq = search.to_lowercase();
-    let filtered: Vec<(usize, &LessonJson)> = lessons.iter().enumerate()
+    let all_filtered: Vec<(usize, &LessonJson)> = lessons.iter().enumerate()
         .filter(|(_, l)| sq.is_empty()
             || l.title.to_lowercase().contains(&sq)
             || l.description.to_lowercase().contains(&sq)
             || l.theme.to_lowercase().contains(&sq))
         .collect();
+    let overflow = sq.is_empty() && all_filtered.len() > PAGE_SIZE;
+    let filtered: &[(usize, &LessonJson)] = if overflow { &all_filtered[..PAGE_SIZE] } else { &all_filtered };
 
     let mode_i_bg = if mode == LessonMode::Interactive { Color::rgba(0.18, 0.50, 0.18, 0.95) } else { Color::rgba(0.08, 0.18, 0.08, 0.80) };
     let mode_g_bg = if mode == LessonMode::Guided      { Color::rgba(0.18, 0.32, 0.60, 0.95) } else { Color::rgba(0.06, 0.10, 0.24, 0.80) };
@@ -324,7 +329,7 @@ fn build_lessons_root(
         })
         .with_children(|content| {
             if tab == LessonsTab::List {
-                for (idx, lesson) in &filtered {
+                for (idx, lesson) in filtered.iter() {
                     let stars = progress.get(*idx);
                     let (bg, border, text_color) = lesson_row_colors(stars);
                     content.spawn((
@@ -341,6 +346,7 @@ fn build_lessons_root(
                             ..default()
                         },
                         BtnLessonStart(*idx),
+                        OriginalBg(bg),
                     ))
                     .with_children(|row| {
                         row.spawn(TextBundle::from_section(
@@ -360,10 +366,15 @@ fn build_lessons_root(
                         "No se encontraron lecciones.",
                         TextStyle { font: font.clone(), font_size: 17.0, color: Color::rgba(0.55, 0.55, 0.70, 1.0) },
                     ));
+                } else if overflow {
+                    content.spawn(TextBundle::from_section(
+                        format!("Mostrando {} de {} — buscá para filtrar", PAGE_SIZE, all_filtered.len()),
+                        TextStyle { font: font.clone(), font_size: 15.0, color: Color::rgba(0.55, 0.55, 0.75, 0.85) },
+                    ));
                 }
             } else {
                 spawn_table_row(content, &font, "#", "Lección", "Estado", true);
-                for (idx, lesson) in &filtered {
+                for (idx, lesson) in filtered.iter() {
                     let stars = progress.get(*idx);
                     let status = match stars { 0 => "Pendiente", 1 => "●○  Guiado", _ => "●●  Hecha" };
                     spawn_table_row(content, &font, &format!("{}", idx + 1), &lesson.title, status, false);
@@ -509,7 +520,10 @@ fn handle_lesson_start(
             description: lesson.description.clone(),
         };
         game_config.mode        = GameMode::Lesson;
-        game_config.player_side = PieceColor::White;
+        game_config.player_side = match lesson.fen.split_whitespace().nth(1) {
+            Some("b") => PieceColor::Black,
+            _ => PieceColor::White,
+        };
         next_state.set(AppState::Playing);
     }
 }
@@ -624,7 +638,6 @@ fn handle_search_input(
                 }
             }
             Key::Backspace => { sq.0.pop(); changed = true; }
-            Key::Space     => { sq.0.push(' '); changed = true; }
             _ => {}
         }
     }
@@ -636,13 +649,16 @@ fn handle_search_input(
 }
 
 fn highlight_lesson_btns(
-    mut q: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<BtnLessonStart>)>,
+    mut q: Query<(&Interaction, &mut BackgroundColor, &OriginalBg), (Changed<Interaction>, With<BtnLessonStart>)>,
 ) {
-    for (i, mut c) in &mut q {
-        if *i == Interaction::Hovered {
-            let s = Srgba::from(c.0);
-            c.0 = Color::srgba((s.red + 0.06).min(1.0), (s.green + 0.06).min(1.0), (s.blue + 0.06).min(1.0), s.alpha);
-        }
+    for (i, mut c, orig) in &mut q {
+        c.0 = match i {
+            Interaction::Hovered => {
+                let s = Srgba::from(orig.0);
+                Color::srgba((s.red + 0.08).min(1.0), (s.green + 0.08).min(1.0), (s.blue + 0.08).min(1.0), s.alpha)
+            }
+            _ => orig.0,
+        };
     }
 }
 
@@ -754,6 +770,7 @@ fn setup_lesson_overlay(
                         ..default()
                     },
                     BtnLessonHint,
+                    OriginalBg(Color::rgba(0.12, 0.30, 0.60, 0.90)),
                 ))
                 .with_children(|p| {
                     p.spawn(TextBundle::from_section("Pista", TextStyle { font: font.clone(), font_size: 16.0, color: Color::rgb(0.80, 0.88, 1.00) }));
@@ -766,6 +783,7 @@ fn setup_lesson_overlay(
                     ..default()
                 },
                 BtnLessonRetry,
+                OriginalBg(Color::rgba(0.35, 0.20, 0.08, 0.90)),
             ))
             .with_children(|p| {
                 p.spawn(TextBundle::from_section("Reintentar", TextStyle { font: font.clone(), font_size: 16.0, color: Color::rgb(1.00, 0.82, 0.65) }));
@@ -777,6 +795,7 @@ fn setup_lesson_overlay(
                     ..default()
                 },
                 BtnLessonExit,
+                OriginalBg(Color::rgba(0.30, 0.10, 0.10, 0.90)),
             ))
             .with_children(|p| {
                 p.spawn(TextBundle::from_section("Salir", TextStyle { font: font.clone(), font_size: 16.0, color: Color::rgb(1.00, 0.72, 0.72) }));
@@ -880,6 +899,7 @@ fn spawn_success_overlay(commands: &mut Commands, asset_server: &AssetServer) {
                 ..default()
             },
             BtnLessonFinish,
+            OriginalBg(Color::rgba(0.18, 0.18, 0.42, 0.95)),
         ))
         .with_children(|p| {
             p.spawn(TextBundle::from_section("Volver al Currículo",
@@ -960,15 +980,18 @@ fn handle_lesson_finish(
 
 fn highlight_overlay_btns(
     mut q: Query<
-        (&Interaction, &mut BackgroundColor),
+        (&Interaction, &mut BackgroundColor, &OriginalBg),
         (Changed<Interaction>, Or<(With<BtnLessonFinish>, With<BtnLessonRetry>, With<BtnLessonExit>, With<BtnLessonHint>)>),
     >,
 ) {
-    for (i, mut c) in &mut q {
-        if *i == Interaction::Hovered {
-            let s = Srgba::from(c.0);
-            c.0 = Color::srgba(s.red + 0.05, s.green + 0.05, s.blue + 0.05, s.alpha);
-        }
+    for (i, mut c, orig) in &mut q {
+        c.0 = match i {
+            Interaction::Hovered => {
+                let s = Srgba::from(orig.0);
+                Color::srgba((s.red + 0.08).min(1.0), (s.green + 0.08).min(1.0), (s.blue + 0.08).min(1.0), s.alpha)
+            }
+            _ => orig.0,
+        };
     }
 }
 

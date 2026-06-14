@@ -33,7 +33,7 @@ pub async fn post_lesson_progress(
     AuthUser { user_id }: AuthUser,
     Json(body): Json<PostProgressBody>,
 ) -> Result<(), AppError> {
-    if body.lesson_idx < 0 || body.lesson_idx > 4 {
+    if body.lesson_idx < 0 || body.lesson_idx >= 100_000 {
         return Err(AppError::BadRequest("invalid lesson_idx".into()));
     }
     let new_stars: i16 = if body.mode == "interactive" { 2 } else { 1 };

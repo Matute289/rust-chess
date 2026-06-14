@@ -113,82 +113,85 @@ def download_and_process(target: int) -> list[dict]:
     skipped = 0
     processed = 0
 
-    with open(tmp.name, "rb") as f:
-        dctx = zstd.ZstdDecompressor()
-        reader = dctx.stream_reader(f)
-        text_reader = io.TextIOWrapper(reader, encoding="utf-8")
+    try:
+        with open(tmp.name, "rb") as f:
+            dctx = zstd.ZstdDecompressor()
+            reader = dctx.stream_reader(f)
+            text_reader = io.TextIOWrapper(reader, encoding="utf-8")
 
-        # Skip header line
-        text_reader.readline()
+            # Skip header line
+            text_reader.readline()
 
-        for line in text_reader:
-            if len(lessons) >= target:
-                break
+            for line in text_reader:
+                if len(lessons) >= target:
+                    break
 
-            line = line.strip()
-            if not line:
-                continue
+                line = line.strip()
+                if not line:
+                    continue
 
-            parts = line.split(",")
-            if len(parts) < 8:
-                continue
+                parts = line.split(",")
+                if len(parts) < 8:
+                    continue
 
-            fen       = parts[1]
-            moves_str = parts[2]
-            themes_str = parts[7] if len(parts) > 7 else ""
+                fen       = parts[1]
+                moves_str = parts[2]
+                themes_str = parts[7] if len(parts) > 7 else ""
 
-            try:
-                rating = int(parts[3])
-            except ValueError:
-                continue
+                try:
+                    rating = int(parts[3])
+                except ValueError:
+                    continue
 
-            # Filter: good puzzle difficulty range
-            if rating < 800 or rating > 2400:
-                skipped += 1
-                continue
-
-            moves = moves_str.strip().split()
-            if len(moves) < 2:
-                skipped += 1
-                continue
-
-            themes = themes_str.strip().split()
-            if not themes:
-                skipped += 1
-                continue
-
-            # Apply opponent's setup move to get the actual puzzle position
-            try:
-                board = chess.Board(fen)
-                setup_move = chess.Move.from_uci(moves[0])
-                if setup_move not in board.legal_moves:
+                # Filter: good puzzle difficulty range
+                if rating < 800 or rating > 2400:
                     skipped += 1
                     continue
-                board.push(setup_move)
-                puzzle_fen = board.fen()
-                answer_uci = moves[1]
 
-                answer_move = chess.Move.from_uci(answer_uci)
-                if answer_move not in board.legal_moves:
+                moves = moves_str.strip().split()
+                if len(moves) < 2:
                     skipped += 1
                     continue
-            except Exception:
-                skipped += 1
-                continue
 
-            title, description, theme_key = classify(themes)
+                themes = themes_str.strip().split()
+                if not themes:
+                    skipped += 1
+                    continue
 
-            lessons.append({
-                "title":       title,
-                "description": description,
-                "theme":       theme_key,
-                "fen":         puzzle_fen,
-                "answer_uci":  answer_uci,
-            })
+                # Apply opponent's setup move to get the actual puzzle position
+                try:
+                    board = chess.Board(fen)
+                    setup_move = chess.Move.from_uci(moves[0])
+                    if setup_move not in board.legal_moves:
+                        skipped += 1
+                        continue
+                    board.push(setup_move)
+                    puzzle_fen = board.fen()
+                    answer_uci = moves[1]
 
-            processed += 1
-            if processed % 1000 == 0:
-                print(f"  {processed}/{target} procesados (saltados: {skipped})...")
+                    answer_move = chess.Move.from_uci(answer_uci)
+                    if answer_move not in board.legal_moves:
+                        skipped += 1
+                        continue
+                except Exception:
+                    skipped += 1
+                    continue
+
+                title, description, theme_key = classify(themes)
+
+                lessons.append({
+                    "title":       title,
+                    "description": description,
+                    "theme":       theme_key,
+                    "fen":         puzzle_fen,
+                    "answer_uci":  answer_uci,
+                })
+
+                processed += 1
+                if processed % 1000 == 0:
+                    print(f"  {processed}/{target} procesados (saltados: {skipped})...")
+    finally:
+        os.remove(tmp.name)
 
     print(f"Completado: {len(lessons)} lecciones, {skipped} saltadas.")
     return lessons

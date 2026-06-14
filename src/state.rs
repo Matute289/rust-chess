@@ -56,9 +56,6 @@ pub struct LessonSetup {
     pub description: String,
 }
 
-impl LessonSetup {
-    pub fn is_last_exercise(&self) -> bool { true }
-}
 
 #[derive(Resource)]
 pub struct GameConfig {

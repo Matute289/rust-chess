@@ -691,14 +691,36 @@ fn reset_board_state(
     draw_state.reset();
 }
 
+fn parse_fen_active_color(fen: &str) -> PieceColor {
+    match fen.split_whitespace().nth(1) {
+        Some("b") => PieceColor::Black,
+        _ => PieceColor::White,
+    }
+}
+
+fn parse_fen_castling_rights(fen: &str) -> CastlingState {
+    let s = fen.split_whitespace().nth(2).unwrap_or("-");
+    CastlingState {
+        white_kingside:  s.contains('K'),
+        white_queenside: s.contains('Q'),
+        black_kingside:  s.contains('k'),
+        black_queenside: s.contains('q'),
+    }
+}
+
 fn reset_game_history(
     mut history:  ResMut<GameHistory>,
     game_config:  Res<GameConfig>,
     lesson_setup: Res<LessonSetup>,
+    mut turn:     ResMut<PlayerTurn>,
+    mut castling: ResMut<CastlingState>,
 ) {
     history.reset();
     if game_config.mode == GameMode::Lesson && !lesson_setup.fen.is_empty() {
         history.initial_fen = lesson_setup.fen.clone();
+        // Override defaults set by reset_board_state with values from the puzzle FEN
+        *turn     = PlayerTurn(parse_fen_active_color(&lesson_setup.fen));
+        *castling = parse_fen_castling_rights(&lesson_setup.fen);
     }
 }
 
