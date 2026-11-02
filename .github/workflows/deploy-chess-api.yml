@@ -5,6 +5,11 @@ on:
     branches: [browser]
     paths:
       - 'chess-server/**'
+      # chess-server builds from the workspace: a lockfile / manifest / engine change alters the binary too
+      # (a lockfile-only security update was never deployed because only chess-server/** triggered this)
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'chess-engine/**'
       - '.github/workflows/deploy-chess-api.yml'
   workflow_dispatch:
 
