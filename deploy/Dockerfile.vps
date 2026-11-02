@@ -16,6 +16,10 @@ RUN wasm-pack build --target web --out-dir web/pkg
 COPY web ./web
 
 FROM nginx:alpine
+# nginx:alpine ships Alpine packages frozen at the date that image was published (e.g. brotli-libs 1.2.0-r1 / curl 8.22.0
+# while Alpine already had the CVE-2026-111497 fix, brotli 1.2.1, and curl 8.23.0). Upgrade at build time so every rebuild
+# brings the current security fixes.
+RUN apk upgrade --no-cache
 COPY --from=builder /app/web /usr/share/nginx/html
 COPY --from=builder /app/assets /usr/share/nginx/html/assets
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
